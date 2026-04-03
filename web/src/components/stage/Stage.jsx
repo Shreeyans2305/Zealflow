@@ -9,6 +9,8 @@ export default function Stage() {
   const [schema, setSchema] = useState(null);
   const [loadState, setLoadState] = useState('loading'); // 'loading' | 'ready' | 'error'
   const [answers, setAnswers] = useState({});
+  const [respondent, setRespondent] = useState({ name: '', email: '' });
+  const [pageIndex, setPageIndex] = useState(0);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -23,6 +25,7 @@ export default function Stage() {
       .then((form) => {
         // API returns the full DB row; schema is nested under `schema` key
         setSchema(form.schema || form);
+        setPageIndex(0);
         setLoadState('ready');
       })
       .catch(() => setLoadState('error'));
@@ -55,7 +58,18 @@ export default function Stage() {
     );
   }
 
+  const pages = schema.settings?.pages?.length
+    ? schema.settings.pages
+    : [{ id: 'page_1', title: 'Page 1' }];
+  const isAnonymousAllowed = schema.settings?.allowAnonymousEntries !== false;
+
   const visibleFields = schema.fields.filter((f) => visibilityMap[f.id]);
+  const fieldsByPage = pages.map((p) => ({
+    ...p,
+    fields: visibleFields.filter((f) => (f.meta?.pageId || pages[0].id) === p.id),
+  }));
+  const currentPage = fieldsByPage[Math.min(pageIndex, Math.max(fieldsByPage.length - 1, 0))] || { fields: [] };
+  const isLastPage = pageIndex >= fieldsByPage.length - 1;
 
   const handleAnswerChange = (fieldId, value) => {
     setAnswers((prev) => ({ ...prev, [fieldId]: value }));
@@ -64,9 +78,25 @@ export default function Stage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError('');
+
+    if (!isLastPage) {
+      setPageIndex((i) => Math.min(i + 1, fieldsByPage.length - 1));
+      return;
+    }
+
+    if (!isAnonymousAllowed && (!respondent.name.trim() || !respondent.email.trim())) {
+      setSubmitError('Please provide your name and email to continue.');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await api.post(`/api/forms/${id}/submit`, { data: answers });
+      await api.post(`/api/forms/${id}/submit`, {
+        data: answers,
+        meta: isAnonymousAllowed
+          ? null
+          : { submitter_name: respondent.name.trim(), submitter_email: respondent.email.trim() },
+      });
       setIsSubmitted(true);
     } catch (err) {
       setSubmitError(err.message || 'Submission failed. Please try again.');
@@ -102,8 +132,23 @@ export default function Stage() {
       <div className="max-w-[720px] mx-auto px-6 py-[96px]">
         <h1 className="text-5xl display-font text-[var(--color-text-primary)] mb-[64px]">{schema.title}</h1>
 
+        {fieldsByPage.length > 1 && (
+          <div className="mb-8 max-w-[500px]">
+            <div className="flex items-center justify-between text-[12px] text-[var(--color-text-secondary)] mb-2">
+              <span>{currentPage.title || `Page ${pageIndex + 1}`}</span>
+              <span>Page {pageIndex + 1} / {fieldsByPage.length}</span>
+            </div>
+            <div className="h-1.5 rounded bg-[var(--color-border-warm)] overflow-hidden">
+              <div
+                className="h-full bg-[var(--color-accent)]"
+                style={{ width: `${((pageIndex + 1) / fieldsByPage.length) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-[48px]">
-          {visibleFields.map((field) => {
+          {currentPage.fields.map((field) => {
             const fieldDef = fieldRegistry[field.type];
             const StageComponent = fieldDef?.StageComponent;
             return (
@@ -132,21 +177,52 @@ export default function Stage() {
             <p className="text-[13px] text-[var(--color-error)]">{submitError}</p>
           )}
 
-          {visibleFields.length > 0 ? (
-            <div className="pt-[32px] border-t border-[var(--color-border-warm)] max-w-[500px]">
+          <div className="pt-[32px] border-t border-[var(--color-border-warm)] max-w-[500px]">
+              {currentPage.fields.length === 0 && (
+                <div className="text-[var(--color-text-secondary)] py-4 text-[14px] italic">
+                  No visible questions on this page.
+                </div>
+              )}
+
+              {!isAnonymousAllowed && isLastPage && (
+                <div className="space-y-3 mb-5">
+                  <p className="text-[13px] text-[var(--color-text-secondary)]">This form requires respondent details.</p>
+                  <input
+                    type="text"
+                    placeholder="Your name"
+                    value={respondent.name}
+                    onChange={(e) => setRespondent((r) => ({ ...r, name: e.target.value }))}
+                    className="input-base w-full"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Your email"
+                    value={respondent.email}
+                    onChange={(e) => setRespondent((r) => ({ ...r, email: e.target.value }))}
+                    className="input-base w-full"
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center gap-3">
+                {pageIndex > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPageIndex((i) => Math.max(i - 1, 0))}
+                    className="btn-secondary px-6 py-3 text-[15px]"
+                  >
+                    Back
+                  </button>
+                )}
               <button
                 type="submit"
                 disabled={submitting}
                 className="btn-primary px-8 py-3 text-[16px] disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {submitting ? 'Submitting…' : schema.settings?.submitLabel || 'Submit Form'}
+                {submitting ? 'Submitting…' : isLastPage ? (schema.settings?.submitLabel || 'Submit Form') : 'Next'}
               </button>
-            </div>
-          ) : (
-            <div className="text-[var(--color-text-secondary)] py-12 text-[15px] italic border border-dashed border-[var(--color-border-warm)] rounded-[12px] text-center bg-[#FFFFFF]">
-              This form blueprint contains no visible inputs.
-            </div>
-          )}
+              </div>
+          </div>
         </form>
       </div>
     </div>

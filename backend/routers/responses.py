@@ -17,15 +17,32 @@ def submit_response(form_id: str, body: SubmitRequest, request: Request):
     sb = get_supabase()
 
     form_result = (
-        sb.table("forms").select("id,is_published").eq("id", form_id).maybe_single().execute()
+        sb.table("forms").select("id,is_published,schema").eq("id", form_id).maybe_single().execute()
     )
     if not form_result.data:
         raise HTTPException(status_code=404, detail="Form not found")
 
+    schema = form_result.data.get("schema") or {}
+    settings = schema.get("settings") or {}
+    allow_anonymous = settings.get("allowAnonymousEntries", True)
+
+    if not allow_anonymous:
+        submitter_name = (body.meta or {}).get("submitter_name")
+        submitter_email = (body.meta or {}).get("submitter_email")
+        if not submitter_name or not submitter_email:
+            raise HTTPException(
+                status_code=400,
+                detail="This form does not allow anonymous submissions. Name and email are required.",
+            )
+
     ip = request.client.host if request.client else None
 
+    payload_data = dict(body.data or {})
+    if body.meta:
+        payload_data["__meta"] = body.meta
+
     result = sb.table("responses").insert(
-        {"form_id": form_id, "data": body.data, "ip_address": ip}
+        {"form_id": form_id, "data": payload_data, "ip_address": ip}
     ).execute()
 
     if not result.data:

@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -16,6 +17,86 @@ from services.supabase_client import get_supabase
 
 router = APIRouter()
 ALLOW_DEV_VERIFY_FALLBACK = os.getenv("ALLOW_DEV_VERIFY_FALLBACK", "true").lower() == "true"
+
+
+def _build_admin_summary(sb, admin_id: str, admin_created_at: str | None) -> dict:
+    forms_result = (
+        sb.table("forms")
+        .select("id,title,updated_at,created_at,schema")
+        .eq("admin_id", admin_id)
+        .execute()
+    )
+    forms = forms_result.data or []
+    form_ids = [f["id"] for f in forms]
+
+    total_responses = 0
+    responses_today = 0
+    response_timestamps: list[str] = []
+    response_count_by_form: dict[str, int] = {}
+    last_response_at_by_form: dict[str, str] = {}
+
+    if form_ids:
+        responses_result = (
+            sb.table("responses")
+            .select("submitted_at,form_id")
+            .in_("form_id", form_ids)
+            .execute()
+        )
+        responses = responses_result.data or []
+        total_responses = len(responses)
+
+        today = datetime.now(timezone.utc).date().isoformat()
+        for r in responses:
+            form_id = r.get("form_id")
+            submitted_at = r.get("submitted_at")
+            if not form_id or not submitted_at:
+                continue
+
+            response_timestamps.append(submitted_at)
+            response_count_by_form[form_id] = response_count_by_form.get(form_id, 0) + 1
+            current_last = last_response_at_by_form.get(form_id)
+            if not current_last or submitted_at > current_last:
+                last_response_at_by_form[form_id] = submitted_at
+            if submitted_at.startswith(today):
+                responses_today += 1
+
+    activity_candidates = [
+        admin_created_at,
+        *[f.get("updated_at") for f in forms if f.get("updated_at")],
+        *response_timestamps,
+    ]
+    activity_candidates = [ts for ts in activity_candidates if ts]
+    last_activity_at = max(activity_candidates) if activity_candidates else admin_created_at
+
+    recent_forms = []
+    for f in forms:
+        fid = f["id"]
+        schema = f.get("schema") or {}
+        recent_forms.append(
+            {
+                "id": fid,
+                "title": f.get("title") or "Untitled form",
+                "response_count": response_count_by_form.get(fid, 0),
+                "last_response_at": last_response_at_by_form.get(fid),
+                "updated_at": f.get("updated_at"),
+                "created_at": f.get("created_at"),
+                "field_count": len(schema.get("fields", [])),
+            }
+        )
+
+    recent_forms.sort(
+        key=lambda x: x.get("last_response_at") or x.get("updated_at") or x.get("created_at") or "",
+        reverse=True,
+    )
+
+    return {
+        "forms_created": len(forms),
+        "total_responses": total_responses,
+        "responses_today": responses_today,
+        "member_since": admin_created_at,
+        "last_activity_at": last_activity_at,
+        "recent_forms": recent_forms[:5],
+    }
 
 
 def get_current_admin(authorization: Optional[str] = Header(None)) -> dict:
@@ -157,6 +238,25 @@ def login(body: LoginRequest):
             "created_at": admin["created_at"],
         },
     }
+
+
+@router.get("/stats")
+def auth_stats(current_admin: dict = Depends(get_current_admin)):
+    sb = get_supabase()
+    summary = _build_admin_summary(sb, current_admin["id"], current_admin.get("created_at"))
+    return {
+        "forms_created": summary["forms_created"],
+        "total_responses": summary["total_responses"],
+        "responses_today": summary["responses_today"],
+        "member_since": summary["member_since"],
+        "last_activity_at": summary["last_activity_at"],
+    }
+
+
+@router.get("/profile-summary")
+def profile_summary(current_admin: dict = Depends(get_current_admin)):
+    sb = get_supabase()
+    return _build_admin_summary(sb, current_admin["id"], current_admin.get("created_at"))
 
 
 @router.get("/me")

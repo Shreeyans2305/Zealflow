@@ -1,13 +1,17 @@
+import os
 import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from postgrest.exceptions import APIError
 
 from models.forms import FormCreate, FormUpdate
 from routers.auth import get_current_admin
+from services.email_service import normalize_email_list, send_form_publish_email
 from services.supabase_client import get_supabase
 
 router = APIRouter()
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 
 def _slugify(text: str) -> str:
@@ -65,27 +69,33 @@ def create_form(body: FormCreate, current_admin: dict = Depends(get_current_admi
     sb = get_supabase()
 
     existing = sb.table("forms").select("id").eq("id", body.id).execute()
-    if existing.data:
+    if getattr(existing, "data", None):
         raise HTTPException(status_code=409, detail="Form ID already exists")
 
     base_slug = _slugify(body.slug or body.title or "untitled-form")
-    slug = _unique_slug(sb, base_slug)
 
-    result = sb.table("forms").insert(
-        {
-            "id": body.id,
-            "slug": slug,
-            "title": body.title,
-            "schema": body.schema,
-            "admin_id": current_admin["id"],
-            "is_published": False,
-        }
-    ).execute()
+    for attempt in range(20):
+        slug = base_slug if attempt == 0 else f"{base_slug}-{attempt}"
 
-    if not result.data:
-        raise HTTPException(status_code=500, detail="Failed to create form")
+        try:
+            result = sb.table("forms").insert(
+                {
+                    "id": body.id,
+                    "slug": slug,
+                    "title": body.title,
+                    "schema": body.schema,
+                    "admin_id": current_admin["id"],
+                    "is_published": False,
+                }
+            ).execute()
 
-    return result.data[0]
+            if getattr(result, "data", None):
+                return result.data[0]
+        except APIError as exc:
+            if str(exc).lower().find("forms_slug_key") == -1 and str(exc).lower().find("duplicate key value") == -1:
+                raise
+
+    raise HTTPException(status_code=500, detail="Failed to create form")
 
 
 @router.get("/{form_id}")
@@ -153,7 +163,7 @@ def delete_form(form_id: str, current_admin: dict = Depends(get_current_admin)):
         .maybe_single()
         .execute()
     )
-    if not existing.data or existing.data["admin_id"] != current_admin["id"]:
+    if not getattr(existing, "data", None) or existing.data["admin_id"] != current_admin["id"]:
         raise HTTPException(status_code=404, detail="Form not found")
 
     sb.table("forms").delete().eq("id", form_id).execute()
@@ -171,9 +181,57 @@ def toggle_publish(form_id: str, current_admin: dict = Depends(get_current_admin
         .maybe_single()
         .execute()
     )
-    if not existing.data or existing.data["admin_id"] != current_admin["id"]:
+    existing_row = existing.data if getattr(existing, "data", None) else None
+    if not existing_row or existing_row["admin_id"] != current_admin["id"]:
         raise HTTPException(status_code=404, detail="Form not found")
 
-    new_state = not existing.data["is_published"]
-    result = sb.table("forms").update({"is_published": new_state}).eq("id", form_id).execute()
-    return result.data[0] if result.data else {}
+    new_state = True
+
+    schema_result = (
+        sb.table("forms")
+        .select("schema,title")
+        .eq("id", form_id)
+        .maybe_single()
+        .execute()
+    )
+    schema = (schema_result.data or {}).get("schema") or {}
+    settings = schema.get("settings") or {}
+
+    update_payload = {"is_published": new_state}
+    result = sb.table("forms").update(update_payload).eq("id", form_id).execute()
+    updated_row = result.data[0] if getattr(result, "data", None) else {}
+    if not updated_row:
+        latest = sb.table("forms").select("id,title,is_published").eq("id", form_id).maybe_single().execute()
+        updated_row = latest.data or {}
+
+    email_result = {
+        "mailing_list_count": 0,
+        "mailing_list_sent": 0,
+    }
+
+    if new_state:
+        recipients = normalize_email_list(settings.get("mailingListEmails"))
+        message = (settings.get("publishEmailMessage") or "").strip()
+        form_url = f"{FRONTEND_URL}/f/{form_id}"
+        form_title = updated_row.get("title") or schema_result.data.get("title") or "Untitled form"
+        sent_count = 0
+
+        for recipient in recipients:
+            try:
+                send_form_publish_email(
+                    recipient,
+                    form_title=form_title,
+                    form_url=form_url,
+                    custom_message=message,
+                    admin_name=current_admin.get("username"),
+                )
+                sent_count += 1
+            except Exception as e:
+                print(f"[Zealflow] Publish email failed for {recipient}: {e}")
+
+        email_result = {
+            "mailing_list_count": len(recipients),
+            "mailing_list_sent": sent_count,
+        }
+
+    return {**updated_row, **email_result}

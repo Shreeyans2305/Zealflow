@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { produce } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
+import { arrayMove } from '@dnd-kit/sortable';
 import { fieldRegistry } from '../registry/fieldRegistry';
 import { api } from '../utils/apiClient';
 
@@ -17,6 +18,10 @@ const createEmptySchema = (overrides = {}) => ({
     showProgressBar: true,
     submitLabel: 'Submit',
     thankYouMessage: 'Thank you!',
+    allowAnonymousEntries: true,
+    pages: [{ id: 'page_1', title: 'Page 1' }],
+    mailingListEmails: [],
+    publishEmailMessage: 'We just published a new form. Please take a look and submit a response.',
   },
   theme: {
     preset: 'minimal',
@@ -28,6 +33,43 @@ const createEmptySchema = (overrides = {}) => ({
   logicRules: [],
   ...overrides,
 });
+
+const ensureSchemaDefaults = (schema) => {
+  const next = structuredClone(schema || {});
+  next.settings = next.settings || {};
+  next.theme = next.theme || {};
+  next.fields = next.fields || [];
+  next.logicRules = next.logicRules || [];
+
+  if (typeof next.settings.allowAnonymousEntries !== 'boolean') {
+    next.settings.allowAnonymousEntries = true;
+  }
+
+  if (!Array.isArray(next.settings.pages) || next.settings.pages.length === 0) {
+    next.settings.pages = [{ id: 'page_1', title: 'Page 1' }];
+  }
+
+  if (!Array.isArray(next.settings.mailingListEmails)) {
+    next.settings.mailingListEmails = typeof next.settings.mailingListEmails === 'string'
+      ? next.settings.mailingListEmails.split(/[,\n;]/).map((s) => s.trim()).filter(Boolean)
+      : [];
+  }
+
+  if (typeof next.settings.publishEmailMessage !== 'string') {
+    next.settings.publishEmailMessage = 'We just published a new form. Please take a look and submit a response.';
+  }
+
+  const firstPageId = next.settings.pages[0].id;
+  next.fields = next.fields.map((f) => ({
+    ...f,
+    meta: {
+      ...(f.meta || {}),
+      pageId: f.meta?.pageId || firstPageId,
+    },
+  }));
+
+  return next;
+};
 
 const maxHistory = 100;
 
@@ -66,12 +108,12 @@ export const useFormStore = create((set, get) => ({
         set({ forms: [], currentFormId: null, isInitialized: true });
         return;
       }
-      const schema = forms[0];
+      const schema = ensureSchemaDefaults(forms[0].schema || forms[0]);
       set({
         forms,
-        currentFormId: schema.id,
-        schema: schema.schema || schema,
-        history: [structuredClone(schema.schema || schema)],
+        currentFormId: forms[0].id,
+        schema,
+        history: [structuredClone(schema)],
         historyPointer: 0,
         isInitialized: true,
       });
@@ -102,7 +144,7 @@ export const useFormStore = create((set, get) => ({
   selectForm: (id) => {
     const target = get().forms.find((f) => f.id === id);
     if (!target) return false;
-    const schema = target.schema || target;
+    const schema = ensureSchemaDefaults(target.schema || target);
     set({
       currentFormId: target.id,
       schema,
@@ -207,19 +249,41 @@ export const useFormStore = create((set, get) => ({
 
   // ---- Field actions ----
 
-  addField: (type) =>
+  addField: (type, pageId = null) =>
+    get().addFieldAtIndex(type, pageId, null),
+
+  addFieldAtIndex: (type, pageId = null, insertIndex = null) =>
     get().applyToCurrentSchema((draft) => {
       const fieldId = `field_${uuidv4()}`;
       const defaultFieldSchema = fieldRegistry[type]?.defaultSchema || {};
-      draft.fields.push({
+      const currentPageId = pageId || draft.settings?.pages?.[0]?.id || 'page_1';
+      const newField = {
         id: fieldId,
         type,
         label: 'New Question',
         placeholder: defaultFieldSchema.placeholder || 'Type your answer…',
         required: false,
         validation: {},
-        meta: { hidden: false, width: 'full', ...defaultFieldSchema },
-      });
+        meta: { hidden: false, width: 'full', pageId: currentPageId, ...defaultFieldSchema },
+      };
+
+      const pageFieldGlobalIndexes = draft.fields
+        .map((field, idx) => ({ field, idx }))
+        .filter(({ field }) => (field.meta?.pageId || draft.settings?.pages?.[0]?.id) === currentPageId)
+        .map(({ idx }) => idx);
+
+      if (insertIndex === null || insertIndex === undefined || pageFieldGlobalIndexes.length === 0) {
+        draft.fields.push(newField);
+        return;
+      }
+
+      const clampedIndex = Math.max(0, Math.min(insertIndex, pageFieldGlobalIndexes.length));
+      const globalInsertIndex =
+        clampedIndex >= pageFieldGlobalIndexes.length
+          ? pageFieldGlobalIndexes[pageFieldGlobalIndexes.length - 1] + 1
+          : pageFieldGlobalIndexes[clampedIndex];
+
+      draft.fields.splice(globalInsertIndex, 0, newField);
     }),
 
   updateField: (id, updates) =>
@@ -239,14 +303,43 @@ export const useFormStore = create((set, get) => ({
         .filter((rule) => rule.conditions.length > 0 && rule.action.targetFieldId !== id);
     }),
 
-  reorderFields: (activeId, overId) =>
+  reorderFields: (activeId, overId, pageId = null) =>
     get().applyToCurrentSchema((draft) => {
-      const oldIndex = draft.fields.findIndex((f) => f.id === activeId);
-      const newIndex = draft.fields.findIndex((f) => f.id === overId);
-      if (oldIndex !== -1 && newIndex !== -1) {
-        const [moved] = draft.fields.splice(oldIndex, 1);
-        draft.fields.splice(newIndex, 0, moved);
+      if (pageId) {
+        const pageFields = draft.fields.filter((f) => (f.meta?.pageId || draft.settings.pages?.[0]?.id) === pageId);
+        const oldIndex = pageFields.findIndex((f) => f.id === activeId);
+        const newIndex = pageFields.findIndex((f) => f.id === overId);
+        if (oldIndex === -1 || newIndex === -1) return;
+
+        const reorderedPageIds = arrayMove(pageFields.map((f) => f.id), oldIndex, newIndex);
+        const rankMap = new Map(reorderedPageIds.map((fid, idx) => [fid, idx]));
+
+        const pageBucket = draft.fields
+          .filter((f) => (f.meta?.pageId || draft.settings.pages?.[0]?.id) === pageId)
+          .sort((a, b) => (rankMap.get(a.id) ?? 0) - (rankMap.get(b.id) ?? 0));
+
+        let cursor = 0;
+        draft.fields = draft.fields.map((f) => {
+          if ((f.meta?.pageId || draft.settings.pages?.[0]?.id) !== pageId) return f;
+          const nextField = pageBucket[cursor];
+          cursor += 1;
+          return nextField;
+        });
+      } else {
+        const oldIndex = draft.fields.findIndex((f) => f.id === activeId);
+        const newIndex = draft.fields.findIndex((f) => f.id === overId);
+        if (oldIndex !== -1 && newIndex !== -1) {
+          const [moved] = draft.fields.splice(oldIndex, 1);
+          draft.fields.splice(newIndex, 0, moved);
+        }
       }
+    }),
+
+  addPage: (title = 'New Page') =>
+    get().applyToCurrentSchema((draft) => {
+      draft.settings.pages = draft.settings.pages || [{ id: 'page_1', title: 'Page 1' }];
+      const nextNum = draft.settings.pages.length + 1;
+      draft.settings.pages.push({ id: `page_${nextNum}_${uuidv4().slice(0, 4)}`, title: title || `Page ${nextNum}` });
     }),
 
   // ---- Logic rules ----

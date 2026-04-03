@@ -1,7 +1,11 @@
 import { useFormStore } from '../../store/formStore';
 import { useUIStore } from '../../store/uiStore';
-import { Share2, Play, Users, ArrowLeft } from 'lucide-react';
+import { Share2, Play, Users, ArrowLeft, CheckCircle2, Copy, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { api } from '../../utils/apiClient';
+import { useModal } from '../../contexts/ModalContext';
+import { ConfirmModal } from '../modals/ModalVariants';
 
 export default function TopBar() {
   const schema = useFormStore(state => state.schema);
@@ -11,6 +15,13 @@ export default function TopBar() {
   const redo = useFormStore(state => state.redo);
   const updateTitle = useFormStore(state => state.updateTitle);
   const navigate = useNavigate();
+  const { openModal, closeModal } = useModal();
+  const [publishing, setPublishing] = useState(false);
+  const [showPublishSuccess, setShowPublishSuccess] = useState(false);
+  const [publishUrl, setPublishUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const canPublish = useMemo(() => Boolean(schema?.id), [schema?.id]);
 
   const handlePreview = () => {
     if (!schema?.id) return;
@@ -21,6 +32,46 @@ export default function TopBar() {
     if (!opened) {
       navigate(`/f/${schema.id}`);
     }
+  };
+
+  const handlePublish = async () => {
+    if (!schema?.id || publishing) return;
+    setPublishing(true);
+    try {
+      const result = await api.patch(`/api/forms/${schema.id}/publish`, {});
+
+      if (!result?.is_published) {
+        throw new Error('Could not publish this form');
+      }
+
+      const url = `${window.location.origin}/f/${schema.id}`;
+      setPublishUrl(url);
+      setShowPublishSuccess(true);
+      setCopied(false);
+    } catch (err) {
+      alert(err.message || 'Publish failed');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleDeleteForm = () => {
+    if (!schema?.id) return;
+
+    const modalId = openModal(
+      <ConfirmModal
+        isOpen={true}
+        onClose={() => closeModal(modalId)}
+        title="Delete Form"
+        message="This will permanently delete the form and all of its responses. This cannot be undone."
+        danger={true}
+        onConfirm={async () => {
+          await api.delete(`/api/forms/${schema.id}`);
+          window.location.assign('/admin');
+        }}
+        onCancel={() => {}}
+      />
+    );
   };
 
   return (
@@ -77,11 +128,51 @@ export default function TopBar() {
             <Play size={14} strokeWidth={1.5} />
             Preview
             </button>
-            <button className="btn-primary py-[6px] px-[16px] text-[13px]">
-            Publish
+            <button
+              onClick={handlePublish}
+              disabled={!canPublish || publishing}
+              className="btn-primary py-[6px] px-[16px] text-[13px] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+            {publishing ? 'Publishing…' : 'Publish'}
+            </button>
+            <button
+              onClick={handleDeleteForm}
+              className="btn-secondary py-[6px] px-[12px] text-[13px] flex items-center gap-2 text-[var(--color-error)]"
+              title="Delete form"
+            >
+              <Trash2 size={14} strokeWidth={1.5} />
+              Delete
             </button>
         </div>
       </div>
+
+      {showPublishSuccess && (
+        <div className="absolute top-[64px] right-6 z-50 bg-white border border-[var(--color-border-warm)] shadow-xl rounded-[14px] p-4 w-[360px] animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="text-[var(--color-success)] mt-0.5 animate-pulse" size={20} />
+            <div className="flex-1">
+              <div className="text-[14px] font-semibold text-[var(--color-text-primary)]">Published successfully</div>
+              <div className="text-[12px] text-[var(--color-text-secondary)] mt-1">Share this form URL</div>
+              <div className="mt-2 flex items-center gap-2">
+                <input readOnly value={publishUrl} className="input-base text-[12px] w-full" />
+                <button
+                  className="btn-secondary p-2"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(publishUrl);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1200);
+                  }}
+                  title="Copy URL"
+                >
+                  <Copy size={14} />
+                </button>
+              </div>
+              {copied && <p className="text-[11px] text-[var(--color-success)] mt-1">Copied</p>}
+            </div>
+            <button onClick={() => setShowPublishSuccess(false)} className="text-[var(--color-text-tertiary)] text-[12px]">✕</button>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

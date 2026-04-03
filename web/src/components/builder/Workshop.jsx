@@ -13,24 +13,40 @@ export default function Workshop() {
   const navigate = useNavigate();
   const selectForm = useFormStore((state) => state.selectForm);
   const createForm = useFormStore((state) => state.createForm);
+  const isInitialized = useFormStore((state) => state.isInitialized);
   const schema = useFormStore((state) => state.schema);
   const currentTab = useUIStore((state) => state.currentTab);
+  const setCurrentPage = useUIStore((state) => state.setCurrentPage);
 
   useEffect(() => {
     if (!id) return;
+    if (!isInitialized) return;
 
     if (id === 'new') {
+      const key = 'zealflow_new_form_redirect_id';
+      const existingNewFormId = sessionStorage.getItem(key);
+      if (existingNewFormId) {
+        sessionStorage.removeItem(key);
+        navigate(`/builder/${existingNewFormId}`, { replace: true });
+        return;
+      }
+
       const newFormId = createForm();
+      sessionStorage.setItem(key, newFormId);
       navigate(`/builder/${newFormId}`, { replace: true });
       return;
     }
 
     const found = selectForm(id);
     if (!found) {
-      const fallbackFormId = createForm();
-      navigate(`/builder/${fallbackFormId}`, { replace: true });
+      navigate('/admin', { replace: true });
     }
-  }, [id, selectForm, createForm, navigate]);
+  }, [id, isInitialized, selectForm, createForm, navigate]);
+
+  useEffect(() => {
+    const firstPageId = schema?.settings?.pages?.[0]?.id || null;
+    setCurrentPage(firstPageId);
+  }, [schema?.id, schema?.settings?.pages, setCurrentPage]);
 
   return (
     <div className="flex flex-col h-screen w-full bg-[var(--color-bg-base)] text-[var(--color-text-primary)] transition-all duration-150 ease-out">

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useFormStore } from '../../store/formStore';
 import { X } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
@@ -23,7 +24,15 @@ const TEMPLATES = [
 export default function DesignPanel() {
     const schema = useFormStore(state => state.schema);
     const updateTheme = useFormStore(state => state.updateTheme);
+    const updateSettings = useFormStore(state => state.updateSettings);
     const setTab = useUIStore(state => state.setTab);
+    const [mailingListText, setMailingListText] = useState('');
+    const [publishMessage, setPublishMessage] = useState('');
+
+    useEffect(() => {
+        setMailingListText((schema.settings.mailingListEmails || []).join('\n'));
+        setPublishMessage(schema.settings.publishEmailMessage || '');
+    }, [schema.id, schema.settings.mailingListEmails, schema.settings.publishEmailMessage]);
 
     return (
         <aside className="absolute right-0 top-0 bottom-0 w-[400px] bg-[#FFFFFF] border-l border-[var(--color-border-warm)] shadow-2xl transition-transform duration-200 ease-out z-50 flex flex-col translate-x-0">
@@ -64,6 +73,41 @@ export default function DesignPanel() {
                         className="w-full h-[320px] p-4 text-[12px] font-mono bg-[#F4F3EF] border border-[var(--color-border-warm)] rounded-[8px] focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] text-[var(--color-text-primary)] resize-vertical shadow-inner"
                         placeholder="/* Inject rules... */"
                     />
+                </div>
+
+                <div className="pt-8 border-t border-[var(--color-border-warm)] space-y-4">
+                    <div>
+                        <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-2">Mailing List</label>
+                        <p className="text-[12px] text-[var(--color-text-tertiary)] mb-3 leading-relaxed">
+                            Add one email per line. When you publish, each address will receive the form link from verify.pragaticonnect@gmail.com.
+                        </p>
+                        <textarea
+                            value={mailingListText}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setMailingListText(value);
+                                updateSettings({
+                                    mailingListEmails: value.split(/[,\n;]/).map((s) => s.trim()).filter(Boolean),
+                                });
+                            }}
+                            className="w-full h-[140px] p-4 text-[13px] font-mono bg-[#F4F3EF] border border-[var(--color-border-warm)] rounded-[8px] focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] text-[var(--color-text-primary)] resize-vertical"
+                            placeholder="first@example.com\nsecond@example.com"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-2">Publish Email Message</label>
+                        <textarea
+                            value={publishMessage}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setPublishMessage(value);
+                                updateSettings({ publishEmailMessage: value });
+                            }}
+                            className="w-full h-[140px] p-4 text-[13px] bg-[#F4F3EF] border border-[var(--color-border-warm)] rounded-[8px] focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] text-[var(--color-text-primary)] resize-vertical"
+                            placeholder="Write a custom message for subscribers..."
+                        />
+                    </div>
                 </div>
             </div>
         </aside>

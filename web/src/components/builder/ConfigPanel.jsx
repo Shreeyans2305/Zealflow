@@ -10,6 +10,7 @@ export default function ConfigPanel() {
   const schema = useFormStore(state => state.schema);
   const updateField = useFormStore(state => state.updateField);
   const deleteField = useFormStore(state => state.deleteField);
+  const pages = schema.settings?.pages || [{ id: 'page_1', title: 'Page 1' }];
 
   const selectedField = schema.fields.find(f => f.id === selectedFieldId);
 
@@ -75,6 +76,19 @@ export default function ConfigPanel() {
                   onChange={(e) => updateField(selectedField.id, { required: e.target.checked })}
                   className="w-[18px] h-[18px] accent-[var(--color-accent)] cursor-pointer"
                 />
+              </div>
+
+              <div>
+                <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-2">Page</label>
+                <select
+                  value={selectedField.meta?.pageId || pages[0]?.id}
+                  onChange={(e) => updateField(selectedField.id, { meta: { ...(selectedField.meta || {}), pageId: e.target.value } })}
+                  className="input-base w-full"
+                >
+                  {pages.map((p) => (
+                    <option key={p.id} value={p.id}>{p.title}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Dynamic Specific Config Component from Registry */}

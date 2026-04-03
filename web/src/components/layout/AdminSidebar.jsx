@@ -4,7 +4,15 @@ import { LogOut, Settings, LayoutGrid, User } from 'lucide-react';
 
 export default function AdminSidebar() {
   const logout = useAuthStore(state => state.logout);
+  const admin = useAuthStore(state => state.admin);
   const location = useLocation();
+
+  const initials = (admin?.username || admin?.email || 'A')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'A';
 
   const handleLogout = () => {
     logout();
@@ -48,10 +56,10 @@ export default function AdminSidebar() {
           className="flex items-center gap-3 text-[13px] font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-3 rounded-[8px] transition-colors hover:bg-[var(--color-bg-hover)] group"
         >
           <div className="w-8 h-8 rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)] flex items-center justify-center font-serif text-[14px] group-hover:bg-[#FFFFFF]">
-            AG
+            {initials}
           </div>
           <div className="flex flex-col">
-            <span className="text-[var(--color-text-primary)] font-medium">AntiGravity</span>
+            <span className="text-[var(--color-text-primary)] font-medium">{admin?.username || 'Admin'}</span>
             <span className="text-[11px] text-[var(--color-text-tertiary)]">Admin</span>
           </div>
         </Link>

@@ -23,6 +23,8 @@ export default function FieldCard({ field, isOverlay }) {
     <div
       ref={setNodeRef}
       style={style}
+      data-page-field="true"
+      data-field-id={field.id}
       onClick={() => selectField(field.id)}
       className={`group relative flex items-start bg-[#FFFFFF] border rounded-[12px] p-6 w-full cursor-pointer transition-all duration-150 ease-out ${
         isSelected ? 'border-[var(--color-accent)] ring-2 ring-[var(--color-accent-soft)]' : 'border-[var(--color-border-warm)] hover:shadow-[0_2px_12px_rgba(0,0,0,0.06)]'

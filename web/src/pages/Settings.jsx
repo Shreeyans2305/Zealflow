@@ -1,11 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import AdminSidebar from '../components/layout/AdminSidebar';
 import { useModal } from '../contexts/ModalContext';
 import { ConfirmModal } from '../components/modals/ModalVariants';
 import { Copy, Plus, Key, Download } from 'lucide-react';
+import { useAuthStore } from '../store/authStore';
+import { api } from '../utils/apiClient';
+
+function formatDate(isoString) {
+    if (!isoString) return '—';
+    const d = new Date(isoString);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function formatDateTime(isoString) {
+    if (!isoString) return '—';
+    const d = new Date(isoString);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    });
+}
 
 export default function Settings() {
     const { openModal, closeModal } = useModal();
+    const admin = useAuthStore((s) => s.admin);
     const [activeTab, setActiveTab] = useState('account');
     const [notifications, setNotifications] = useState({
         "New response received": true,
@@ -14,6 +37,48 @@ export default function Settings() {
         "Form published/unpublished": true
     });
     const [appearance, setAppearance] = useState({ theme: 'System', font: 'Medium', width: 'Comfortable' });
+    const [stats, setStats] = useState({
+        forms_created: 0,
+        total_responses: 0,
+        responses_today: 0,
+        member_since: null,
+        last_activity_at: null,
+    });
+    const [statsLoading, setStatsLoading] = useState(true);
+
+    const tokenPreview = useMemo(() => {
+        const token = localStorage.getItem('zealflow_token');
+        if (!token) return 'No active token';
+        if (token.length < 20) return token;
+        return `${token.slice(0, 16)}...${token.slice(-8)}`;
+    }, [admin?.id]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        async function loadStats() {
+            setStatsLoading(true);
+            try {
+                const data = await api.get('/api/auth/stats');
+                if (!cancelled) setStats(data);
+            } catch (_) {
+                if (!cancelled) {
+                    setStats({
+                        forms_created: 0,
+                        total_responses: 0,
+                        responses_today: 0,
+                        member_since: admin?.created_at || null,
+                        last_activity_at: admin?.created_at || null,
+                    });
+                }
+            } finally {
+                if (!cancelled) setStatsLoading(false);
+            }
+        }
+
+        loadStats();
+        return () => { cancelled = true; };
+    }, [admin?.created_at]);
 
     const openPasswordModal = () => {
         const id = openModal(
@@ -84,13 +149,13 @@ export default function Settings() {
                                         <h2 className="text-[11px] uppercase tracking-[0.08em] text-[#A8A49E] mb-4">Identity</h2>
                                         <div className="flex flex-col gap-4">
                                             <div>
-                                                <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-2">Full Name</label>
-                                                <input type="text" defaultValue="AntiGravity AI" className="input-base w-full max-w-[400px]" />
+                                                <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-2">Username</label>
+                                                <input type="text" value={admin?.username || ''} readOnly className="input-base w-full max-w-[400px] bg-[var(--color-bg-base)] text-[var(--color-text-secondary)]" />
                                             </div>
                                             <div>
                                                 <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-2">Email address</label>
                                                 <div className="flex items-center gap-3">
-                                                    <input type="email" defaultValue="antigravity@gemini.dev" readOnly className="input-base w-full max-w-[400px] bg-[var(--color-bg-base)] text-[var(--color-text-secondary)]" />
+                                                    <input type="email" value={admin?.email || ''} readOnly className="input-base w-full max-w-[400px] bg-[var(--color-bg-base)] text-[var(--color-text-secondary)]" />
                                                     <span className="text-[11px] font-medium bg-[#4A7C5915] text-[#4A7C59] px-2 py-1 rounded">Verified</span>
                                                 </div>
                                             </div>
@@ -102,7 +167,7 @@ export default function Settings() {
                                         <div className="py-4 border-b border-[var(--color-border-warm)] flex items-center justify-between">
                                             <div>
                                                 <div className="text-[15px] font-medium">Password</div>
-                                                <div className="text-[13px] text-[var(--color-text-secondary)] mt-1">Last changed 3 months ago</div>
+                                                <div className="text-[13px] text-[var(--color-text-secondary)] mt-1">Member since {formatDate(stats.member_since || admin?.created_at)}</div>
                                             </div>
                                             <button onClick={openPasswordModal} className="btn-secondary text-[13px] py-2 px-4">Change Password</button>
                                         </div>
@@ -210,9 +275,18 @@ export default function Settings() {
                                         <div className="flex gap-2">
                                             <div className="relative flex-1">
                                                 <Key size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
-                                                <input readOnly value="sk_live_9f8d7e6c_antigravity" className="input-base w-full pl-10 font-mono text-[13px] text-[var(--color-text-secondary)] bg-[#F4F3EF]" />
+                                                <input readOnly value={tokenPreview} className="input-base w-full pl-10 font-mono text-[13px] text-[var(--color-text-secondary)] bg-[#F4F3EF]" />
                                             </div>
-                                            <button className="btn-secondary p-2.5" title="Copy"><Copy size={16} /></button>
+                                            <button
+                                                className="btn-secondary p-2.5"
+                                                title="Copy"
+                                                onClick={() => {
+                                                    const token = localStorage.getItem('zealflow_token') || '';
+                                                    if (token) navigator.clipboard?.writeText(token);
+                                                }}
+                                            >
+                                                <Copy size={16} />
+                                            </button>
                                             <button className="px-4 text-[13px] font-medium text-[var(--color-text-secondary)] hover:text-[#1C1B19] transition-colors">Regenerate</button>
                                         </div>
                                     </section>
@@ -231,13 +305,28 @@ export default function Settings() {
                                     <section>
                                         <h2 className="text-[11px] uppercase tracking-[0.08em] text-[#A8A49E] mb-4">Usage</h2>
                                         <div className="bg-[#FFFFFF] border border-[var(--color-border-warm)] p-6 rounded-[12px]">
-                                            <div className="flex justify-between text-[13px] mb-2 font-medium">
-                                                <span>API Requests Today</span>
-                                                <span className="text-[var(--color-text-secondary)]">240 / 10,000</span>
-                                            </div>
-                                            <div className="h-2 w-full bg-[#E5E3DD] rounded-full overflow-hidden">
-                                                <div className="h-full bg-[#1C1B19]" style={{ width: '2.4%' }} />
-                                            </div>
+                                            {statsLoading ? (
+                                                <div className="text-[13px] text-[var(--color-text-secondary)]">Loading usage…</div>
+                                            ) : (
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="rounded-lg border border-[var(--color-border-warm)] p-3">
+                                                        <div className="label-upper">Forms Created</div>
+                                                        <div className="text-[22px] display-font mt-1">{stats.forms_created}</div>
+                                                    </div>
+                                                    <div className="rounded-lg border border-[var(--color-border-warm)] p-3">
+                                                        <div className="label-upper">Total Responses</div>
+                                                        <div className="text-[22px] display-font mt-1">{stats.total_responses}</div>
+                                                    </div>
+                                                    <div className="rounded-lg border border-[var(--color-border-warm)] p-3">
+                                                        <div className="label-upper">Responses Today</div>
+                                                        <div className="text-[22px] display-font mt-1">{stats.responses_today}</div>
+                                                    </div>
+                                                    <div className="rounded-lg border border-[var(--color-border-warm)] p-3">
+                                                        <div className="label-upper">Last Activity</div>
+                                                        <div className="text-[13px] font-medium mt-2 text-[var(--color-text-secondary)]">{formatDateTime(stats.last_activity_at)}</div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </section>
                                 </div>
