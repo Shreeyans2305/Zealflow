@@ -1,20 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../utils/apiClient';
 
 export default function Verify() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
+  const hasRequested = useRef(false);
 
   const [status, setStatus] = useState('loading'); // 'loading' | 'success' | 'error'
   const [message, setMessage] = useState('');
 
   useEffect(() => {
+    if (hasRequested.current) return;
+
     if (!token) {
       setStatus('error');
       setMessage('No verification token found in the link.');
       return;
     }
+
+    hasRequested.current = true;
 
     api.get(`/api/auth/verify?token=${encodeURIComponent(token)}`)
       .then((data) => {

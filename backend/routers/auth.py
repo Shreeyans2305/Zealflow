@@ -1,8 +1,9 @@
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from models.auth import AdminOut, LoginRequest, SignupRequest
+from models.auth import AdminOut, LoginRequest, ResendVerificationRequest, SignupRequest
 from services.auth_service import (
     create_token,
     decode_token,
@@ -10,10 +11,11 @@ from services.auth_service import (
     hash_password,
     verify_password,
 )
-from services.email_service import send_verification_email
+from services.email_service import build_verification_url, send_verification_email
 from services.supabase_client import get_supabase
 
 router = APIRouter()
+ALLOW_DEV_VERIFY_FALLBACK = os.getenv("ALLOW_DEV_VERIFY_FALLBACK", "true").lower() == "true"
 
 
 def get_current_admin(authorization: Optional[str] = Header(None)) -> dict:
@@ -64,26 +66,70 @@ def signup(body: SignupRequest):
 
     try:
         send_verification_email(body.email, body.username, verify_token)
+        return {
+            "message": "Account created. Check your email to verify before logging in.",
+            "email_sent": True,
+        }
     except Exception as e:
-        # Don't fail signup if email fails — admin can resend later
         print(f"[Zealflow] Verification email failed: {e}")
 
-    return {"message": "Account created. Check your email to verify before logging in."}
+        if ALLOW_DEV_VERIFY_FALLBACK:
+            return {
+                "message": "Account created, but email delivery failed. Use the verification link below.",
+                "email_sent": False,
+                "verification_url": build_verification_url(verify_token),
+            }
+
+        return {
+            "message": "Account created, but verification email could not be delivered. Use resend verification.",
+            "email_sent": False,
+        }
 
 
 @router.get("/verify")
 def verify_email(token: str):
     sb = get_supabase()
-    result = sb.table("admins").select("id").eq("verify_token", token).maybe_single().execute()
-    if not result.data:
+    result = sb.table("admins").select("id, is_verified").eq("verify_token", token).maybe_single().execute()
+    admin_data = result.data if result else None
+    if not admin_data:
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
-    admin_id = result.data["id"]
-    sb.table("admins").update({"is_verified": True, "verify_token": None}).eq(
-        "id", admin_id
-    ).execute()
+    if not admin_data["is_verified"]:
+        admin_id = admin_data["id"]
+        sb.table("admins").update({"is_verified": True}).eq("id", admin_id).execute()
 
     return {"message": "Email verified. You can now log in."}
+
+
+@router.post("/resend-verification")
+def resend_verification(body: ResendVerificationRequest):
+    sb = get_supabase()
+    result = sb.table("admins").select("id, username, is_verified").eq("email", body.email).maybe_single().execute()
+
+    admin = result.data
+    if not admin:
+        raise HTTPException(status_code=404, detail="Account not found for this email")
+
+    if admin["is_verified"]:
+        return {"message": "Email is already verified.", "email_sent": False}
+
+    verify_token = generate_verify_token()
+    sb.table("admins").update({"verify_token": verify_token}).eq("id", admin["id"]).execute()
+
+    try:
+        send_verification_email(body.email, admin["username"], verify_token)
+        return {"message": "Verification email sent.", "email_sent": True}
+    except Exception as e:
+        print(f"[Zealflow] Resend verification email failed: {e}")
+
+        if ALLOW_DEV_VERIFY_FALLBACK:
+            return {
+                "message": "Email delivery failed. Use the verification link below.",
+                "email_sent": False,
+                "verification_url": build_verification_url(verify_token),
+            }
+
+        raise HTTPException(status_code=500, detail="Failed to send verification email")
 
 
 @router.post("/login")

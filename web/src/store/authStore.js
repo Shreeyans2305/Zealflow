@@ -22,7 +22,7 @@ export const useAuthStore = create((set) => ({
   },
 
   signup: async (username, email, password) => {
-    await api.post('/api/auth/signup', { username, email, password });
+    return api.post('/api/auth/signup', { username, email, password });
   },
 
   login: async (username, password) => {

@@ -1,18 +1,28 @@
 import os
 import smtplib
+from email.utils import parseaddr
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "Zealflow <noreply@example.com>")
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
+SMTP_FROM = os.getenv("SMTP_FROM", "Zealflow <noreply@example.com>").strip()
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
+
+
+def build_verification_url(token: str) -> str:
+    return f"{FRONTEND_URL}/verify?token={token}"
 
 
 def send_verification_email(to_email: str, username: str, token: str) -> None:
-    verify_url = f"{FRONTEND_URL}/verify?token={token}"
+    if not SMTP_USER or not SMTP_PASSWORD:
+        raise RuntimeError("SMTP_USER and SMTP_PASSWORD must be configured to send emails")
+
+    verify_url = build_verification_url(token)
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Verify your Zealflow account"
@@ -60,8 +70,18 @@ This link is valid for 24 hours. If you didn't create this account, ignore this 
     msg.attach(MIMEText(text_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.ehlo()
-        server.starttls()
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(SMTP_FROM, to_email, msg.as_string())
+    parsed_from = parseaddr(SMTP_FROM)[1]
+    envelope_from = parsed_from if parsed_from and ("@" in parsed_from) and (" " not in parsed_from) else SMTP_USER
+
+    if SMTP_USE_SSL:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(envelope_from, [to_email], msg.as_string())
+    else:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.ehlo()
+            if SMTP_USE_TLS:
+                server.starttls()
+                server.ehlo()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(envelope_from, [to_email], msg.as_string())

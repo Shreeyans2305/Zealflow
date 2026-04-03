@@ -12,6 +12,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
 class AdminOut(BaseModel):
     id: str
     username: str

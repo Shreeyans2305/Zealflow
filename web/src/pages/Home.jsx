@@ -10,6 +10,7 @@ export default function Home() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [verificationUrl, setVerificationUrl] = useState('');
   const [loading, setLoading] = useState(false);
 
   const login = useAuthStore((s) => s.login);
@@ -20,6 +21,8 @@ export default function Home() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
+    setVerificationUrl('');
     setLoading(true);
     try {
       await login(username, password);
@@ -35,10 +38,13 @@ export default function Home() {
   const handleSignup = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
+    setVerificationUrl('');
     setLoading(true);
     try {
-      await signup(username, email, password);
-      setSuccessMsg('Account created! Check your email to verify before logging in.');
+      const result = await signup(username, email, password);
+      setSuccessMsg(result.message || 'Account created! Check your email to verify before logging in.');
+      setVerificationUrl(result.verification_url || '');
       setTab('login');
       setPassword('');
     } catch (err) {
@@ -78,6 +84,18 @@ export default function Home() {
         {successMsg && (
           <div className="mb-4 p-3 rounded-lg bg-[#4A7C5912] border border-[var(--color-success)] text-[13px] text-[var(--color-success)]">
             {successMsg}
+            {verificationUrl && (
+              <div className="mt-2">
+                <a
+                  href={verificationUrl}
+                  className="underline"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Verify account now
+                </a>
+              </div>
+            )}
           </div>
         )}
 
