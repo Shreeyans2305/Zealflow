@@ -9,6 +9,7 @@ class Form(Base):
     title = Column(String, index=True)
     schema_data = Column(JSON)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
 
 class Response(Base):
     __tablename__ = "responses"

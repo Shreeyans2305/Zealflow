@@ -1,10 +1,11 @@
 from pydantic import BaseModel
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import datetime
 
 class FormBase(BaseModel):
     title: str
     schema_data: Dict[str, Any]
+    expires_at: Optional[datetime.datetime] = None
 
 class FormCreate(FormBase):
     pass

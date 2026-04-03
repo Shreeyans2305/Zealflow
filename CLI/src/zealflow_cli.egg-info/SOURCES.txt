@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+src/zealflow_cli/__init__.py
+src/zealflow_cli/config.py
+src/zealflow_cli/main.py
+src/zealflow_cli.egg-info/PKG-INFO
+src/zealflow_cli.egg-info/SOURCES.txt
+src/zealflow_cli.egg-info/dependency_links.txt
+src/zealflow_cli.egg-info/entry_points.txt
+src/zealflow_cli.egg-info/requires.txt
+src/zealflow_cli.egg-info/top_level.txt
