@@ -11,6 +11,7 @@ import Settings from './pages/Settings';
 import Workshop from './components/builder/Workshop';
 import Stage from './components/stage/Stage';
 import Vault from './components/vault/Vault';
+import CollabJoinPage from './pages/CollabJoinPage';
 
 function AdminRoute({ children }) {
   const admin = useAuthStore((s) => s.admin);
@@ -62,6 +63,8 @@ function App() {
           <Route path="/settings" element={<AdminRoute><Settings /></AdminRoute>} />
           <Route path="/builder/:id" element={<AdminRoute><Workshop /></AdminRoute>} />
           <Route path="/vault/:id" element={<AdminRoute><Vault /></AdminRoute>} />
+
+          <Route path="/collab/join" element={<AdminRoute><CollabJoinPage /></AdminRoute>} />
 
           {/* Public form view */}
           <Route path="/f/:id" element={<Stage />} />

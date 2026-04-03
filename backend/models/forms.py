@@ -14,3 +14,19 @@ class FormUpdate(BaseModel):
     schema: Optional[dict[str, Any]] = None
     slug: Optional[str] = None
     is_published: Optional[bool] = None
+
+
+class FormShareRequest(BaseModel):
+    password: Optional[str] = None
+    expires_in_hours: Optional[int] = 24
+
+
+class FormJoinRequest(BaseModel):
+    token: str
+    password: Optional[str] = None
+
+
+class FormCollaboratorResponse(BaseModel):
+    user_id: str
+    role: str
+    username: Optional[str] = None

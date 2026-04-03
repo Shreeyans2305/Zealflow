@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { arrayMove } from '@dnd-kit/sortable';
 import { fieldRegistry } from '../registry/fieldRegistry';
 import { api } from '../utils/apiClient';
+import * as Y from 'yjs';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -118,6 +119,11 @@ export const useFormStore = create((set, get) => ({
   historyPointer: 0,
   isInitialized: false,
 
+  // ---- Yjs Collaboration ----
+  yDoc: new Y.Doc(),
+  yMap: null,
+  isRemoteUpdate: false,
+
   // ---- API-backed initialisation ----
 
   initForms: async () => {
@@ -139,6 +145,40 @@ export const useFormStore = create((set, get) => ({
     } catch (err) {
       console.error('[Zealflow] initForms failed:', err.message);
       set({ isInitialized: true });
+    }
+  },
+
+  setYjsProvider: (broadcastFn) => {
+    const { yDoc } = get();
+    yDoc.on('update', (update, origin) => {
+      // Only broadcast if the update was generated locally (not from a remote sync)
+      if (origin !== 'remote') {
+        broadcastFn(update);
+      }
+    });
+
+    // Initialize yMap
+    const yMap = yDoc.getMap('schema');
+    set({ yMap });
+
+    // Handle incoming updates from Yjs
+    yMap.observeDeep(() => {
+      if (get().isRemoteUpdate) return;
+      
+      const remoteSchema = yMap.toJSON();
+      if (Object.keys(remoteSchema).length > 0) {
+        set({ schema: ensureSchemaDefaults(remoteSchema) });
+      }
+    });
+  },
+
+  applyRemoteUpdate: (update) => {
+    const { yDoc } = get();
+    set({ isRemoteUpdate: true });
+    try {
+      Y.applyUpdate(yDoc, new Uint8Array(update), 'remote');
+    } finally {
+      set({ isRemoteUpdate: false });
     }
   },
 
@@ -222,6 +262,20 @@ export const useFormStore = create((set, get) => ({
         historyPointer: Math.min(trimmedHistory.length - 1, maxHistory - 1),
       };
     });
+
+    // Update Yjs map
+    const { yDoc, yMap, isRemoteUpdate } = get();
+    if (yMap && nextSchemaForSave && !isRemoteUpdate) {
+      // We perform a simple overwrite for now because translating entire Immer diffs 
+      // to Yjs granular operations is complex. Yjs will handle the merge logic.
+      yDoc.transact(() => {
+        Object.entries(nextSchemaForSave).forEach(([key, value]) => {
+          if (JSON.stringify(yMap.get(key)) !== JSON.stringify(value)) {
+            yMap.set(key, value);
+          }
+        });
+      });
+    }
 
     if (nextSchemaForSave && formIdForSave) {
       scheduleAutoSave(formIdForSave, nextSchemaForSave);
