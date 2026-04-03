@@ -7,6 +7,9 @@ import Canvas from './Canvas';
 import ConfigPanel from './ConfigPanel';
 import DesignPanel from './DesignPanel';
 import { useUIStore } from '../../store/uiStore';
+import { useCollaboration } from '../../hooks/useCollaboration';
+import { CollaboratorCursors } from '../collaboration/CollaboratorCursors';
+import { useAuthStore } from '../../store/authStore';
 
 export default function Workshop() {
   const { id } = useParams();
@@ -17,6 +20,38 @@ export default function Workshop() {
   const schema = useFormStore((state) => state.schema);
   const currentTab = useUIStore((state) => state.currentTab);
   const setCurrentPage = useUIStore((state) => state.setCurrentPage);
+  const admin = useAuthStore((s) => s.admin);
+
+  const { collaborators, broadcastCursor, broadcastSync, channel } = useCollaboration(id);
+  const setYjsProvider = useFormStore((s) => s.setYjsProvider);
+  const applyRemoteUpdate = useFormStore((s) => s.applyRemoteUpdate);
+
+  // Initialize Yjs provider connection
+  useEffect(() => {
+    if (id && id !== 'new') {
+      setYjsProvider(broadcastSync);
+    }
+  }, [id, setYjsProvider, broadcastSync]);
+
+  // Handle incoming Yjs updates
+  useEffect(() => {
+    if (!channel) return;
+    
+    const sub = channel.on('broadcast', { event: 'yjs_update' }, ({ payload }) => {
+      if (payload.user_id !== admin?.id) {
+        applyRemoteUpdate(payload.update);
+      }
+    });
+
+    return () => {
+      // Subscriptions are handled by channel.unsubscribe in hook
+    };
+  }, [channel, admin?.id, applyRemoteUpdate]);
+
+  const handleMouseMove = (e) => {
+    if (!id || id === 'new') return;
+    broadcastCursor(e.clientX, e.clientY);
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -49,7 +84,10 @@ export default function Workshop() {
   }, [schema?.id, schema?.settings?.pages, setCurrentPage]);
 
   return (
-    <div className="flex flex-col h-screen w-full bg-[var(--color-bg-base)] text-[var(--color-text-primary)] transition-all duration-150 ease-out">
+    <div 
+      className="flex flex-col h-screen w-full bg-[var(--color-bg-base)] text-[var(--color-text-primary)] transition-all duration-150 ease-out relative"
+      onMouseMove={handleMouseMove}
+    >
       {schema?.theme?.customCSS && (
         <style dangerouslySetInnerHTML={{ __html: schema.theme.customCSS }} />
       )}
@@ -60,6 +98,7 @@ export default function Workshop() {
         <LeftSidebar />
 
         <main className="flex-1 flex justify-center overflow-y-auto relative py-12 z-10 w-full px-6">
+          <CollaboratorCursors collaborators={collaborators} currentUserId={admin?.id} />
           <Canvas />
         </main>
         

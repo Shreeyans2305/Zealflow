@@ -1,12 +1,15 @@
 import os
 import re
-from typing import Optional
+import secrets
+from datetime import datetime, timedelta, timezone
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from postgrest.exceptions import APIError
 
-from models.forms import FormCreate, FormUpdate
+from models.forms import FormCreate, FormUpdate, FormShareRequest, FormJoinRequest, FormCollaboratorResponse
 from routers.auth import get_current_admin
+from services.auth_service import hash_password, verify_password
 from services.email_service import normalize_email_list, send_form_publish_email
 from services.supabase_client import get_supabase
 
@@ -22,30 +25,60 @@ def _slugify(text: str) -> str:
     return text or "form"
 
 
-def _unique_slug(sb, base: str) -> str:
-    slug = base
-    counter = 1
-    while True:
-        result = sb.table("forms").select("id").eq("slug", slug).execute()
-        if not result.data:
-            return slug
-        slug = f"{base}-{counter}"
-        counter += 1
+def _is_collaborator(sb, form_id: str, user_id: str) -> bool:
+    result = (
+        sb.table("form_collaborators")
+        .select("id")
+        .eq("form_id", form_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    return result.data is not None
 
 
 @router.get("")
 def list_forms(current_admin: dict = Depends(get_current_admin)):
     sb = get_supabase()
-    result = (
+    
+    # Forms owned by admin
+    owned_result = (
         sb.table("forms")
         .select("id,slug,title,is_published,created_at,updated_at,schema")
         .eq("admin_id", current_admin["id"])
         .order("created_at", desc=True)
         .execute()
     )
+    
+    # Forms where admin is a collaborator
+    collab_result = (
+        sb.table("form_collaborators")
+        .select("form_id")
+        .eq("user_id", current_admin["id"])
+        .execute()
+    )
+    collab_ids = [c["form_id"] for c in collab_result.data or []]
+    
+    collab_forms = []
+    if collab_ids:
+        shared_result = (
+            sb.table("forms")
+            .select("id,slug,title,is_published,created_at,updated_at,schema")
+            .in_("id", collab_ids)
+            .execute()
+        )
+        collab_forms = shared_result.data or []
 
+    # Deduplicate — owner may also appear as collaborator
+    seen_ids = set()
+    all_forms = []
+    for f in (owned_result.data or []) + collab_forms:
+        if f["id"] not in seen_ids:
+            seen_ids.add(f["id"])
+            all_forms.append(f)
+    
     forms = []
-    for f in result.data or []:
+    for f in all_forms:
         schema = f.get("schema") or {}
         forms.append(
             {
@@ -55,11 +88,11 @@ def list_forms(current_admin: dict = Depends(get_current_admin)):
                 "is_published": f["is_published"],
                 "created_at": f["created_at"],
                 "updated_at": f["updated_at"],
-                "schema": schema,
                 "field_count": len(schema.get("fields", [])),
                 "version": schema.get("version", 1),
                 "settings": schema.get("settings", {}),
                 "theme": schema.get("theme", {}),
+                "is_owner": f.get("admin_id") == current_admin["id"] if "admin_id" in f else True
             }
         )
     return forms
@@ -109,9 +142,20 @@ def get_form(form_id: str, authorization: Optional[str] = Header(None)):
 
     form = result.data
 
-    # Unpublished forms are only visible to authenticated admins
+    # Unpublished forms are only visible to authenticated admins (owner or collaborator)
     if not form["is_published"]:
         if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=404, detail="Form not found")
+        
+        # Check if user is owner or collaborator
+        try:
+            from services.auth_service import decode_token
+            token = authorization.split(" ", 1)[1]
+            user_id = decode_token(token)
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        if form["admin_id"] != user_id and not _is_collaborator(sb, form_id, user_id):
             raise HTTPException(status_code=404, detail="Form not found")
 
     return form
@@ -132,8 +176,13 @@ def update_form(
         .maybe_single()
         .execute()
     )
-    if not existing.data or existing.data["admin_id"] != current_admin["id"]:
+    if not existing.data:
         raise HTTPException(status_code=404, detail="Form not found")
+    
+    # Check permission: owner or editor collaborator
+    is_owner = existing.data["admin_id"] == current_admin["id"]
+    if not is_owner and not _is_collaborator(sb, form_id, current_admin["id"]):
+        raise HTTPException(status_code=403, detail="Permission denied")
 
     updates: dict = {}
     if body.schema is not None:
@@ -164,11 +213,118 @@ def delete_form(form_id: str, current_admin: dict = Depends(get_current_admin)):
         .maybe_single()
         .execute()
     )
+    # Only owner can delete
     if not getattr(existing, "data", None) or existing.data["admin_id"] != current_admin["id"]:
-        raise HTTPException(status_code=404, detail="Form not found")
+        raise HTTPException(status_code=404, detail="Form not found or you are not the owner")
 
     sb.table("forms").delete().eq("id", form_id).execute()
     return {"success": True}
+
+
+# --- Collaboration Endpoints ---
+
+@router.post("/{form_id}/share")
+def share_form(
+    form_id: str,
+    body: FormShareRequest,
+    current_admin: dict = Depends(get_current_admin),
+):
+    sb = get_supabase()
+    
+    # Only owner can share
+    existing = sb.table("forms").select("admin_id").eq("id", form_id).maybe_single().execute()
+    if not existing.data or existing.data["admin_id"] != current_admin["id"]:
+        raise HTTPException(status_code=403, detail="Only the owner can share this form")
+    
+    token = secrets.token_urlsafe(32)
+    password_hash = hash_password(body.password) if body.password else None
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=body.expires_in_hours)
+    
+    result = sb.table("collaboration_links").insert({
+        "form_id": form_id,
+        "token": token,
+        "password_hash": password_hash,
+        "expires_at": expires_at.isoformat()
+    }).execute()
+    
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to create sharing link")
+        
+    return {"link": f"{FRONTEND_URL}/collab/join?token={token}", "token": token}
+
+
+@router.post("/join")
+def join_collaboration(
+    body: FormJoinRequest,
+    current_admin: dict = Depends(get_current_admin),
+):
+    sb = get_supabase()
+    
+    # Find active link
+    link_result = (
+        sb.table("collaboration_links")
+        .select("*")
+        .eq("token", body.token)
+        .gt("expires_at", datetime.now(timezone.utc).isoformat())
+        .maybe_single()
+        .execute()
+    )
+    
+    if not link_result.data:
+        raise HTTPException(status_code=404, detail="Invalid or expired collaboration link")
+        
+    link = link_result.data
+    
+    # Check password if required
+    if link["password_hash"]:
+        if not body.password or not verify_password(body.password, link["password_hash"]):
+            raise HTTPException(status_code=403, detail="Incorrect password for collaboration link")
+            
+    # Add as collaborator
+    try:
+        sb.table("form_collaborators").insert({
+            "form_id": link["form_id"],
+            "user_id": current_admin["id"],
+            "role": "editor"
+        }).execute()
+    except APIError as e:
+        if "duplicate key" not in str(e).lower():
+            raise
+            
+    return {"form_id": link["form_id"], "success": True}
+
+
+@router.get("/{form_id}/collaborators", response_model=List[FormCollaboratorResponse])
+def get_collaborators(
+    form_id: str,
+    current_admin: dict = Depends(get_current_admin),
+):
+    sb = get_supabase()
+    
+    # Check access
+    existing = sb.table("forms").select("admin_id").eq("id", form_id).maybe_single().execute()
+    if not existing.data:
+         raise HTTPException(status_code=404, detail="Form not found")
+         
+    if existing.data["admin_id"] != current_admin["id"] and not _is_collaborator(sb, form_id, current_admin["id"]):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    result = (
+        sb.table("form_collaborators")
+        .select("user_id, role, admins(username)")
+        .eq("form_id", form_id)
+        .execute()
+    )
+    
+    collabs = []
+    for c in result.data or []:
+        admins = c.get("admins") or {}
+        collabs.append({
+            "user_id": c["user_id"],
+            "role": c["role"],
+            "username": admins.get("username")
+        })
+    return collabs
 
 
 @router.patch("/{form_id}/publish")
@@ -183,8 +339,12 @@ def toggle_publish(form_id: str, current_admin: dict = Depends(get_current_admin
         .execute()
     )
     existing_row = existing.data if getattr(existing, "data", None) else None
-    if not existing_row or existing_row["admin_id"] != current_admin["id"]:
-        raise HTTPException(status_code=404, detail="Form not found")
+    if not existing_row:
+         raise HTTPException(status_code=404, detail="Form not found")
+
+    # Only owner can publish
+    if existing_row["admin_id"] != current_admin["id"]:
+         raise HTTPException(status_code=403, detail="Only the owner can publish this form")
 
     new_state = True
 

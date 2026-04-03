@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { api } from '../../utils/apiClient';
 import { useModal } from '../../contexts/ModalContext';
 import { ConfirmModal } from '../modals/ModalVariants';
+import { ShareFormModal } from '../collaboration/ShareFormModal';
 
 export default function TopBar() {
   const schema = useFormStore(state => state.schema);
@@ -74,6 +75,11 @@ export default function TopBar() {
     );
   };
 
+  const handleShare = () => {
+    if (!schema?.id) return;
+    openModal(<ShareFormModal formId={schema.id} formTitle={schema.title} />);
+  };
+
   return (
     <header className="flex items-center justify-between h-14 px-6 bg-[#FFFFFF] border-b border-[var(--color-border-warm)] flex-shrink-0 z-30 relative transition-all duration-150 ease-out">
       <div className="flex items-center gap-4">
@@ -120,7 +126,10 @@ export default function TopBar() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-            <button className="btn-secondary py-[6px] px-[12px] text-[13px] flex items-center gap-2">
+            <button 
+              onClick={handleShare}
+              className="btn-secondary py-[6px] px-[12px] text-[13px] flex items-center gap-2"
+            >
             <Share2 size={14} strokeWidth={1.5} />
             Share
             </button>
