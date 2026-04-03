@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { evaluateFieldVisibility } from '../../utils/logicEngine';
+import { evaluateFieldVisibility, resolveNextPageId } from '../../utils/logicEngine';
 import { fieldRegistry } from '../../registry/fieldRegistry';
 import { api } from '../../utils/apiClient';
 
@@ -42,13 +42,47 @@ function clearCachedTimedSession(formId) {
   }
 }
 
+function getSequentialNextPageId(pages, currentPageId) {
+  if (!Array.isArray(pages) || pages.length === 0) return null;
+  const idx = pages.findIndex((p) => p.id === currentPageId);
+  if (idx === -1) return pages[0]?.id || null;
+  return pages[idx + 1]?.id || null;
+}
+
+function resolveRuntimeNextPageId(schema, answers, pages, currentPageId) {
+  const branchTarget = resolveNextPageId(schema, answers, currentPageId);
+  if (branchTarget && pages.some((p) => p.id === branchTarget)) {
+    return branchTarget;
+  }
+  return getSequentialNextPageId(pages, currentPageId);
+}
+
+function buildForwardPath(schema, answers, pages, startPageId) {
+  if (!startPageId) return [];
+  const path = [];
+  const visited = new Set();
+  let current = startPageId;
+  let guard = 0;
+
+  while (current && guard < 100) {
+    path.push(current);
+    visited.add(current);
+    const next = resolveRuntimeNextPageId(schema, answers, pages, current);
+    if (!next || visited.has(next)) break;
+    current = next;
+    guard += 1;
+  }
+
+  return path;
+}
+
 export default function Stage() {
   const { id } = useParams();
   const [schema, setSchema] = useState(null);
   const [loadState, setLoadState] = useState('loading'); // 'loading' | 'ready' | 'error'
   const [answers, setAnswers] = useState({});
   const [respondent, setRespondent] = useState({ name: '', email: '' });
-  const [pageIndex, setPageIndex] = useState(0);
+  const [pageTrail, setPageTrail] = useState([]);
   const [deadlineAt, setDeadlineAt] = useState(null);
   const [isClosedByDeadline, setIsClosedByDeadline] = useState(false);
   const [timedSession, setTimedSession] = useState({ enabled: false, seconds: 0, remaining: 0, token: null });
@@ -72,7 +106,10 @@ export default function Stage() {
         if (dl && new Date(dl).getTime() < Date.now()) {
           setIsClosedByDeadline(true);
         }
-        setPageIndex(0);
+        const nextPages = nextSchema?.settings?.pages?.length
+          ? nextSchema.settings.pages
+          : [{ id: 'page_1', title: 'Page 1' }];
+        setPageTrail(nextPages[0]?.id ? [nextPages[0].id] : []);
 
         const isTimedEnabled = Boolean(nextSchema?.settings?.timedResponseEnabled);
         const configuredSeconds = Number(nextSchema?.settings?.timedResponseSeconds || 0);
@@ -148,6 +185,23 @@ export default function Stage() {
     return evaluateFieldVisibility(schema, answers);
   }, [schema, answers]);
 
+  const pages = schema?.settings?.pages?.length
+    ? schema.settings.pages
+    : [{ id: 'page_1', title: 'Page 1' }];
+
+  useEffect(() => {
+    const nextTrail = pageTrail.filter((pageId) => pages.some((p) => p.id === pageId));
+    const current = pageTrail.join('|');
+    const normalized = nextTrail.join('|');
+    if (current !== normalized) {
+      setPageTrail(nextTrail.length ? nextTrail : (pages[0]?.id ? [pages[0].id] : []));
+      return;
+    }
+    if (pageTrail.length === 0 && pages[0]?.id) {
+      setPageTrail([pages[0].id]);
+    }
+  }, [pageTrail, pages]);
+
   if (loadState === 'loading') {
     return (
       <div className="min-h-screen bg-[var(--color-bg-base)] flex items-center justify-center">
@@ -186,9 +240,6 @@ export default function Stage() {
     );
   }
 
-  const pages = schema.settings?.pages?.length
-    ? schema.settings.pages
-    : [{ id: 'page_1', title: 'Page 1' }];
   const isAnonymousAllowed = schema.settings?.allowAnonymousEntries !== false;
 
   const visibleFields = schema.fields.filter((f) => visibilityMap[f.id]);
@@ -196,8 +247,17 @@ export default function Stage() {
     ...p,
     fields: visibleFields.filter((f) => (f.meta?.pageId || pages[0].id) === p.id),
   }));
-  const currentPage = fieldsByPage[Math.min(pageIndex, Math.max(fieldsByPage.length - 1, 0))] || { fields: [] };
-  const isLastPage = pageIndex >= fieldsByPage.length - 1;
+
+  const sanitizedTrail = pageTrail.filter((id) => pages.some((p) => p.id === id));
+  const currentPageId = sanitizedTrail[sanitizedTrail.length - 1] || pages[0]?.id;
+  const currentPage = fieldsByPage.find((p) => p.id === currentPageId) || fieldsByPage[0] || { fields: [] };
+  const nextPageId = resolveRuntimeNextPageId(schema, answers, pages, currentPage?.id);
+  const isLastPage = !nextPageId;
+
+  const forwardPath = buildForwardPath(schema, answers, pages, currentPage?.id);
+  const completedBeforeCurrent = Math.max(0, sanitizedTrail.length - 1);
+  const logicalTotalPages = Math.max(completedBeforeCurrent + forwardPath.length, 1);
+  const logicalCurrentPage = Math.min(completedBeforeCurrent + 1, logicalTotalPages);
 
   const handleAnswerChange = (fieldId, value) => {
     setAnswers((prev) => ({ ...prev, [fieldId]: value }));
@@ -208,7 +268,10 @@ export default function Stage() {
     setSubmitError('');
 
     if (!isLastPage) {
-      setPageIndex((i) => Math.min(i + 1, fieldsByPage.length - 1));
+      const targetPageId = nextPageId;
+      if (targetPageId) {
+        setPageTrail((prev) => [...prev, targetPageId]);
+      }
       return;
     }
 
@@ -283,13 +346,13 @@ export default function Stage() {
         {fieldsByPage.length > 1 && (
           <div className="mb-8 max-w-[500px]">
             <div className="flex items-center justify-between text-[12px] text-[var(--color-text-secondary)] mb-2">
-              <span>{currentPage.title || `Page ${pageIndex + 1}`}</span>
-              <span>Page {pageIndex + 1} / {fieldsByPage.length}</span>
+              <span>{currentPage.title || `Page ${logicalCurrentPage}`}</span>
+              <span>Page {logicalCurrentPage} / {logicalTotalPages}</span>
             </div>
             <div className="h-1.5 rounded bg-[var(--color-border-warm)] overflow-hidden">
               <div
                 className="h-full bg-[var(--color-accent)]"
-                style={{ width: `${((pageIndex + 1) / fieldsByPage.length) * 100}%` }}
+                style={{ width: `${(logicalCurrentPage / logicalTotalPages) * 100}%` }}
               />
             </div>
           </div>
@@ -353,10 +416,15 @@ export default function Stage() {
               )}
 
               <div className="flex items-center gap-3">
-                {pageIndex > 0 && (
+                {sanitizedTrail.length > 1 && (
                   <button
                     type="button"
-                    onClick={() => setPageIndex((i) => Math.max(i - 1, 0))}
+                    onClick={() => {
+                      setPageTrail((prev) => {
+                        if (prev.length <= 1) return prev;
+                        return prev.slice(0, -1);
+                      });
+                    }}
                     className="btn-secondary px-6 py-3 text-[15px]"
                   >
                     Back

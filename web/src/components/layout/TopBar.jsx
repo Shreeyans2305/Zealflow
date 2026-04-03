@@ -10,6 +10,9 @@ import { ShareFormModal } from '../collaboration/ShareFormModal';
 
 export default function TopBar() {
   const schema = useFormStore(state => state.schema);
+  const forms = useFormStore(state => state.forms);
+  const currentFormId = useFormStore(state => state.currentFormId);
+  const applyToCurrentSchema = useFormStore(state => state.applyToCurrentSchema);
   const currentTab = useUIStore(state => state.currentTab);
   const setTab = useUIStore(state => state.setTab);
   const undo = useFormStore(state => state.undo);
@@ -23,6 +26,11 @@ export default function TopBar() {
   const [copied, setCopied] = useState(false);
 
   const canPublish = useMemo(() => Boolean(schema?.id), [schema?.id]);
+  const currentForm = useMemo(
+    () => forms.find((f) => f.id === currentFormId),
+    [forms, currentFormId]
+  );
+  const isPublished = Boolean(currentForm?.is_published);
 
   const handlePreview = () => {
     if (!schema?.id) return;
@@ -43,6 +51,12 @@ export default function TopBar() {
 
       if (!result?.is_published) {
         throw new Error('Could not publish this form');
+      }
+
+      if (result?.version) {
+        applyToCurrentSchema((draft) => {
+          draft.version = Number(result.version) || draft.version || 1;
+        });
       }
 
       const url = `${window.location.origin}/f/${schema.id}`;
@@ -142,7 +156,7 @@ export default function TopBar() {
               disabled={!canPublish || publishing}
               className="btn-primary py-[6px] px-[16px] text-[13px] disabled:opacity-50 disabled:cursor-not-allowed"
             >
-            {publishing ? 'Publishing…' : 'Publish'}
+            {publishing ? 'Publishing…' : isPublished ? 'Republish' : 'Publish'}
             </button>
             <button
               onClick={handleDeleteForm}

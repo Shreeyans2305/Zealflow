@@ -6,6 +6,7 @@ import LeftSidebar from '../layout/LeftSidebar';
 import Canvas from './Canvas';
 import ConfigPanel from './ConfigPanel';
 import DesignPanel from './DesignPanel';
+import LogicPanel from './LogicPanel';
 import { useUIStore } from '../../store/uiStore';
 import { useCollaboration } from '../../hooks/useCollaboration';
 import { CollaboratorCursors } from '../collaboration/CollaboratorCursors';
@@ -19,6 +20,7 @@ export default function Workshop() {
   const isInitialized = useFormStore((state) => state.isInitialized);
   const schema = useFormStore((state) => state.schema);
   const currentTab = useUIStore((state) => state.currentTab);
+  const currentPageId = useUIStore((state) => state.currentPageId);
   const setCurrentPage = useUIStore((state) => state.setCurrentPage);
   const admin = useAuthStore((s) => s.admin);
 
@@ -34,6 +36,7 @@ export default function Workshop() {
   const resetYjsDoc = useFormStore((s) => s.resetYjsDoc);
   const applyRemoteUpdate = useFormStore((s) => s.applyRemoteUpdate);
   const applyRemoteSchemaSnapshot = useFormStore((s) => s.applyRemoteSchemaSnapshot);
+  const flushAutoSaveNow = useFormStore((s) => s.flushAutoSaveNow);
 
   // Initialize Yjs provider connection
   useEffect(() => {
@@ -97,9 +100,39 @@ export default function Workshop() {
   }, [id, isInitialized, selectForm, createForm, navigate]);
 
   useEffect(() => {
-    const firstPageId = schema?.settings?.pages?.[0]?.id || null;
-    setCurrentPage(firstPageId);
-  }, [schema?.id, schema?.settings?.pages, setCurrentPage]);
+    const pages = schema?.settings?.pages || [];
+    if (pages.length === 0) {
+      setCurrentPage(null);
+      return;
+    }
+
+    const hasValidCurrentPage = currentPageId && pages.some((p) => p.id === currentPageId);
+    if (!hasValidCurrentPage) {
+      setCurrentPage(pages[0].id);
+    }
+  }, [schema?.id, schema?.settings?.pages, currentPageId, setCurrentPage]);
+
+  useEffect(() => {
+    const handlePageHide = () => {
+      flushAutoSaveNow();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushAutoSaveNow();
+      }
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      flushAutoSaveNow();
+    };
+  }, [flushAutoSaveNow]);
 
   return (
     <div 
@@ -121,6 +154,7 @@ export default function Workshop() {
         </main>
         
         {currentTab === 'builder' && <ConfigPanel />}
+        {currentTab === 'logic' && <LogicPanel />}
         {currentTab === 'design' && <DesignPanel />}
       </div>
     </div>

@@ -95,14 +95,25 @@ const maxHistory = 100;
 
 // Module-level debounce timer for auto-saving schema changes to the API
 let _autoSaveTimer = null;
+let _pendingAutoSave = null;
 let _yDocUpdateHandler = null;
 let _yMapObserver = null;
 
+async function persistSchema(formId, schema) {
+  await api.put(`/api/forms/${formId}`, { schema });
+}
+
 function scheduleAutoSave(formId, schema) {
+  _pendingAutoSave = { formId, schema };
   clearTimeout(_autoSaveTimer);
   _autoSaveTimer = setTimeout(async () => {
+    if (!_pendingAutoSave) return;
+    const payload = _pendingAutoSave;
     try {
-      await api.put(`/api/forms/${formId}`, { schema });
+      await persistSchema(payload.formId, payload.schema);
+      if (_pendingAutoSave === payload) {
+        _pendingAutoSave = null;
+      }
     } catch (err) {
       console.error('[Zealflow] Auto-save failed:', err.message);
     }
@@ -125,6 +136,23 @@ export const useFormStore = create((set, get) => ({
   yDoc: new Y.Doc(),
   yMap: null,
   isRemoteUpdate: false,
+
+  flushAutoSaveNow: async () => {
+    if (_autoSaveTimer) {
+      clearTimeout(_autoSaveTimer);
+      _autoSaveTimer = null;
+    }
+    if (!_pendingAutoSave) return;
+    const payload = _pendingAutoSave;
+    try {
+      await persistSchema(payload.formId, payload.schema);
+      if (_pendingAutoSave === payload) {
+        _pendingAutoSave = null;
+      }
+    } catch (err) {
+      console.error('[Zealflow] Flush auto-save failed:', err.message);
+    }
+  },
 
   resetYjsDoc: () => {
     const { yDoc, yMap } = get();
@@ -490,6 +518,14 @@ export const useFormStore = create((set, get) => ({
       draft.settings.pages = draft.settings.pages || [{ id: 'page_1', title: 'Page 1' }];
       const nextNum = draft.settings.pages.length + 1;
       draft.settings.pages.push({ id: `page_${nextNum}_${uuidv4().slice(0, 4)}`, title: title || `Page ${nextNum}` });
+    }),
+
+  updatePageTitle: (pageId, title) =>
+    get().applyToCurrentSchema((draft) => {
+      draft.settings.pages = draft.settings.pages || [{ id: 'page_1', title: 'Page 1' }];
+      const idx = draft.settings.pages.findIndex((p) => p.id === pageId);
+      if (idx === -1) return;
+      draft.settings.pages[idx].title = title;
     }),
 
   // ---- Logic rules ----

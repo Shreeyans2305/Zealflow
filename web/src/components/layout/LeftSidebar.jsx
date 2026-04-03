@@ -6,6 +6,7 @@ import { useUIStore } from '../../store/uiStore';
 export default function LeftSidebar() {
   const addField = useFormStore(state => state.addField);
   const addPage = useFormStore(state => state.addPage);
+  const updatePageTitle = useFormStore(state => state.updatePageTitle);
   const schema = useFormStore(state => state.schema);
   const updateSettings = useFormStore(state => state.updateSettings);
   const currentPageId = useUIStore(state => state.currentPageId);
@@ -22,18 +23,24 @@ export default function LeftSidebar() {
           <span className="text-[13px] font-medium text-[var(--color-text-primary)]">Pages</span>
         </button>
         <ul className="pl-9 space-y-1">
-          {pages.map((page) => (
+          {pages.map((page, idx) => (
             <li key={page.id}>
-              <button
-                onClick={() => setCurrentPage(page.id)}
+              <div
                 className={`w-full text-left text-[13px] py-1 border-l pl-3 ml-[6px] transition-colors ${
                   resolvedPageId === page.id
                     ? 'text-[var(--color-text-primary)] border-[var(--color-accent)] font-medium'
                     : 'text-[var(--color-text-secondary)] border-[var(--color-border-warm)] hover:text-[var(--color-text-primary)]'
                 }`}
               >
-                {page.title}
-              </button>
+                <input
+                  value={page.title || ''}
+                  onFocus={() => setCurrentPage(page.id)}
+                  onClick={() => setCurrentPage(page.id)}
+                  onChange={(e) => updatePageTitle(page.id, e.target.value)}
+                  className="w-full bg-transparent outline-none"
+                  placeholder={`Page ${idx + 1}`}
+                />
+              </div>
             </li>
           ))}
         </ul>

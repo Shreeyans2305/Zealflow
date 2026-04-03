@@ -357,13 +357,20 @@ def toggle_publish(form_id: str, current_admin: dict = Depends(get_current_admin
         .execute()
     )
     schema = (schema_result.data or {}).get("schema") or {}
+    current_version = schema.get("version", 1)
+    try:
+        current_version = int(current_version)
+    except Exception:
+        current_version = 1
+    next_version = max(1, current_version + 1)
+    schema["version"] = next_version
     settings = schema.get("settings") or {}
 
-    update_payload = {"is_published": new_state}
+    update_payload = {"is_published": new_state, "schema": schema}
     result = sb.table("forms").update(update_payload).eq("id", form_id).execute()
     updated_row = result.data[0] if getattr(result, "data", None) else {}
     if not updated_row:
-        latest = sb.table("forms").select("id,title,is_published").eq("id", form_id).maybe_single().execute()
+        latest = sb.table("forms").select("id,title,is_published,schema").eq("id", form_id).maybe_single().execute()
         updated_row = latest.data or {}
 
     email_result = {
@@ -396,4 +403,10 @@ def toggle_publish(form_id: str, current_admin: dict = Depends(get_current_admin
             "mailing_list_sent": sent_count,
         }
 
-    return {**updated_row, **email_result}
+    response_schema = updated_row.get("schema") or schema
+    return {
+        **updated_row,
+        **email_result,
+        "version": (response_schema or {}).get("version", next_version),
+        "republished": bool(existing_row.get("is_published")),
+    }
