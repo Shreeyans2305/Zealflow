@@ -7,6 +7,7 @@ Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 Requires-Dist: requests
 Requires-Dist: rich>=13.7.0
+Requires-Dist: questionary>=2.0.1
 
 # Zealflow CLI
 A headless terminal connector for interfacing securely entirely via local configurations with your backend.

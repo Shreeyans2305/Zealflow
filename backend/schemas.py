@@ -17,6 +17,9 @@ class FormResponse(FormBase):
     class Config:
         from_attributes = True
 
+class AdminAuth(BaseModel):
+    password: str
+
 class SubmissionCreate(BaseModel):
     answers: Dict[str, Any]
 

@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import models, schemas
 from database import SessionLocal, engine
+from typing import List
+import os
 import csv
 import io
 import datetime
@@ -26,6 +28,21 @@ def get_db():
         yield db
     finally:
         db.close()
+
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "zealflow")
+
+@app.post("/auth/admin")
+def authenticate_admin(auth: schemas.AdminAuth):
+    if auth.password == ADMIN_SECRET:
+        return {"status": "success", "token": "admin_granted"}
+    raise HTTPException(status_code=401, detail="Invalid admin password")
+
+@app.get("/forms", response_model=List[schemas.FormResponse])
+def get_all_forms(db: Session = Depends(get_db)):
+    forms = db.query(models.Form).all()
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    active_forms = [f for f in forms if not f.expires_at or f.expires_at > now]
+    return active_forms
 
 @app.post("/forms", response_model=schemas.FormResponse)
 def create_form(form: schemas.FormCreate, db: Session = Depends(get_db)):
