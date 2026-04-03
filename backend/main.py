@@ -74,6 +74,14 @@ def submit_response(form_id: str, submission: schemas.SubmissionCreate, db: Sess
     db.refresh(db_response)
     return db_response
 
+@app.get("/forms/{form_id}/responses", response_model=List[schemas.SubmissionResponse])
+def get_responses_json(form_id: str, db: Session = Depends(get_db)):
+    db_form = db.query(models.Form).filter(models.Form.id == form_id).first()
+    if db_form is None:
+        raise HTTPException(status_code=404, detail="Form not found")
+    responses = db.query(models.Response).filter(models.Response.form_id == form_id).all()
+    return responses
+
 @app.get("/forms/{form_id}/responses/csv")
 def export_responses_csv(form_id: str, db: Session = Depends(get_db)):
     db_form = db.query(models.Form).filter(models.Form.id == form_id).first()
