@@ -1,0 +1,9 @@
+{
+  "title": "Welcome Survey",
+  "fields": [
+    { "id": "q1", "label": "What is your name?" },
+    { "id": "q2", "label": "How did you hear about us?", "placeholder": "Twitter, Google, etc." }
+  ]
+}
+
+

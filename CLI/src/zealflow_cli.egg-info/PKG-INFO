@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: zealflow-cli
+Version: 0.1.0
+Summary: Terminal interface for building and filling Zealflow workspaces.
+Author-email: AntiGravity <antigravity@gemini.dev>
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: requests
+
+# Zealflow CLI
+A headless terminal connector for interfacing securely entirely via local configurations with your backend.
+
+## Usage
+- `zealflow configure --api-url http://localhost:8000`
+- `zealflow admin create ./myschema.json`
+- `zealflow admin export <form_id> --out data.csv`
+- `zealflow fill <form_id>`

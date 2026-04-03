@@ -1,0 +1,2 @@
+[console_scripts]
+zealflow = zealflow_cli.main:main

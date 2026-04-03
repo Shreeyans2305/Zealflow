@@ -5,6 +5,7 @@ import models, schemas
 from database import SessionLocal, engine
 import csv
 import io
+import datetime
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -28,7 +29,7 @@ def get_db():
 
 @app.post("/forms", response_model=schemas.FormResponse)
 def create_form(form: schemas.FormCreate, db: Session = Depends(get_db)):
-    db_form = models.Form(title=form.title, schema_data=form.schema_data)
+    db_form = models.Form(title=form.title, schema_data=form.schema_data, expires_at=form.expires_at)
     db.add(db_form)
     db.commit()
     db.refresh(db_form)
@@ -46,6 +47,9 @@ def submit_response(form_id: str, submission: schemas.SubmissionCreate, db: Sess
     db_form = db.query(models.Form).filter(models.Form.id == form_id).first()
     if db_form is None:
         raise HTTPException(status_code=404, detail="Form not found")
+        
+    if db_form.expires_at and datetime.datetime.utcnow() > db_form.expires_at:
+        raise HTTPException(status_code=403, detail="Form window has strictly expired. Rejection active.")
     
     db_response = models.Response(form_id=form_id, answers=submission.answers)
     db.add(db_response)
