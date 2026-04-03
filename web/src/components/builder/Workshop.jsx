@@ -22,31 +22,49 @@ export default function Workshop() {
   const setCurrentPage = useUIStore((state) => state.setCurrentPage);
   const admin = useAuthStore((s) => s.admin);
 
-  const { collaborators, broadcastCursor, broadcastSync, channel } = useCollaboration(id);
+  const {
+    collaborators,
+    broadcastCursor,
+    broadcastSync,
+    broadcastSchema,
+    onRemoteYjsUpdate,
+    onSchemaSnapshot,
+  } = useCollaboration(id);
   const setYjsProvider = useFormStore((s) => s.setYjsProvider);
+  const resetYjsDoc = useFormStore((s) => s.resetYjsDoc);
   const applyRemoteUpdate = useFormStore((s) => s.applyRemoteUpdate);
+  const applyRemoteSchemaSnapshot = useFormStore((s) => s.applyRemoteSchemaSnapshot);
 
   // Initialize Yjs provider connection
   useEffect(() => {
-    if (id && id !== 'new') {
-      setYjsProvider(broadcastSync);
+    if (id && id !== 'new' && schema?.id === id) {
+      resetYjsDoc();
+      setYjsProvider(broadcastSync, broadcastSchema);
     }
-  }, [id, setYjsProvider, broadcastSync]);
+  }, [id, schema?.id, resetYjsDoc, setYjsProvider, broadcastSync, broadcastSchema]);
 
   // Handle incoming Yjs updates
   useEffect(() => {
-    if (!channel) return;
-    
-    const sub = channel.on('broadcast', { event: 'yjs_update' }, ({ payload }) => {
-      if (payload.user_id !== admin?.id) {
-        applyRemoteUpdate(payload.update);
+    const dispose = onRemoteYjsUpdate((update) => {
+      if (admin?.id) {
+        applyRemoteUpdate(update);
       }
     });
-
     return () => {
-      // Subscriptions are handled by channel.unsubscribe in hook
+      dispose();
     };
-  }, [channel, admin?.id, applyRemoteUpdate]);
+  }, [admin?.id, applyRemoteUpdate, onRemoteYjsUpdate]);
+
+  useEffect(() => {
+    const dispose = onSchemaSnapshot((snapshotSchema) => {
+      if (admin?.id) {
+        applyRemoteSchemaSnapshot(snapshotSchema);
+      }
+    });
+    return () => {
+      dispose();
+    };
+  }, [admin?.id, applyRemoteSchemaSnapshot, onSchemaSnapshot]);
 
   const handleMouseMove = (e) => {
     if (!id || id === 'new') return;

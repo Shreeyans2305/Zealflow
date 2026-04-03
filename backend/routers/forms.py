@@ -88,6 +88,7 @@ def list_forms(current_admin: dict = Depends(get_current_admin)):
                 "is_published": f["is_published"],
                 "created_at": f["created_at"],
                 "updated_at": f["updated_at"],
+                "schema": schema,
                 "field_count": len(schema.get("fields", [])),
                 "version": schema.get("version", 1),
                 "settings": schema.get("settings", {}),

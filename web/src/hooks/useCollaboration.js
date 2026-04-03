@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { supabase } from '../utils/supabase';
 import { useAuthStore } from '../store/authStore';
 
 const COLORS = [
@@ -10,100 +9,177 @@ const COLORS = [
 export function useCollaboration(formId) {
   const admin = useAuthStore((s) => s.admin);
   const [collaborators, setCollaborators] = useState({});
-  const channelRef = useRef(null);
-  const myColor = useRef(COLORS[Math.floor(Math.random() * COLORS.length)]);
+  const socketRef = useRef(null);
+  const reconnectTimerRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
+  const lastCursorSentAtRef = useRef(0);
+  const remoteYjsHandlerRef = useRef(null);
+  const schemaSnapshotHandlerRef = useRef(null);
+  const closedByClientRef = useRef(false);
+
+  const pickColorForUser = useCallback((userId) => {
+    if (!userId) return COLORS[0];
+    const hash = userId.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    return COLORS[Math.abs(hash) % COLORS.length];
+  }, []);
+
+  const sendMessage = useCallback((payload) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify(payload));
+  }, []);
 
   const broadcastCursor = useCallback((x, y) => {
-    const ch = channelRef.current;
-    if (ch && ch.state === 'joined') {
-      ch.send({
-        type: 'broadcast',
-        event: 'cursor_move',
-        payload: { x, y, user_id: admin?.id }
-      });
-    }
-  }, [admin?.id]);
+    if (!admin?.id) return;
+    const now = Date.now();
+    if (now - lastCursorSentAtRef.current < 40) return;
+    lastCursorSentAtRef.current = now;
+    sendMessage({ type: 'cursor_move', x, y });
+  }, [admin?.id, sendMessage]);
 
   const broadcastSync = useCallback((update) => {
-    const ch = channelRef.current;
-    if (ch && ch.state === 'joined') {
-      ch.send({
-        type: 'broadcast',
-        event: 'yjs_update',
-        payload: { update: Array.from(update), user_id: admin?.id }
-      });
-    }
-  }, [admin?.id]);
+    if (!admin?.id || !update) return;
+    sendMessage({ type: 'yjs_update', update: Array.from(update) });
+  }, [admin?.id, sendMessage]);
+
+  const broadcastSchema = useCallback((schema) => {
+    if (!admin?.id || !schema || typeof schema !== 'object') return;
+    sendMessage({ type: 'schema_update', schema });
+  }, [admin?.id, sendMessage]);
+
+  const onRemoteYjsUpdate = useCallback((callback) => {
+    remoteYjsHandlerRef.current = callback;
+    return () => {
+      if (remoteYjsHandlerRef.current === callback) {
+        remoteYjsHandlerRef.current = null;
+      }
+    };
+  }, []);
+
+  const onSchemaSnapshot = useCallback((callback) => {
+    schemaSnapshotHandlerRef.current = callback;
+    return () => {
+      if (schemaSnapshotHandlerRef.current === callback) {
+        schemaSnapshotHandlerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
-    if (!formId || !admin) return;
+    const token = localStorage.getItem('zealflow_token');
+    if (!formId || formId === 'new' || !admin?.id || !token) return () => {};
 
-    const channelName = `form-collab:${formId}`;
-    const channel = supabase.channel(channelName, {
-      config: {
-        presence: {
-          key: admin.id,
-        },
-      },
-    });
+    closedByClientRef.current = false;
 
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const formatted = {};
-        Object.keys(state).forEach((key) => {
-          formatted[key] = state[key][0];
-        });
-        setCollaborators((prev) => ({ ...prev, ...formatted }));
-      })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        setCollaborators((prev) => ({
-          ...prev,
-          [key]: newPresences[0],
-        }));
-      })
-      .on('presence', { event: 'leave' }, ({ key }) => {
-        setCollaborators((prev) => {
-          const next = { ...prev };
-          delete next[key];
-          return next;
-        });
-      })
-      .on('broadcast', { event: 'cursor_move' }, ({ payload }) => {
-        setCollaborators((prev) => {
-          if (!prev[payload.user_id]) return prev;
-          return {
-            ...prev,
-            [payload.user_id]: {
-              ...prev[payload.user_id],
-              cursor: { x: payload.x, y: payload.y },
-            },
-          };
-        });
-      });
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const wsBase = (import.meta.env.VITE_WS_URL || apiUrl)
+      .replace(/^http:\/\//i, 'ws://')
+      .replace(/^https:\/\//i, 'wss://')
+      .replace(/\/$/, '');
 
-    channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        await channel.track({
-          user_id: admin.id,
-          username: admin.username || 'Anonymous',
-          color: myColor.current,
-          online_at: new Date().toISOString(),
-        });
-      }
-    });
+    const connectSocket = () => {
+      if (closedByClientRef.current) return;
 
-    channelRef.current = channel;
+      const wsUrl = `${wsBase}/ws/forms/${encodeURIComponent(formId)}?token=${encodeURIComponent(token)}`;
+      const socket = new WebSocket(wsUrl);
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        reconnectAttemptsRef.current = 0;
+        sendMessage({ type: 'ping' });
+      };
+
+      socket.onmessage = (event) => {
+        let data = null;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+
+        if (data?.type === 'presence_snapshot' && Array.isArray(data.users)) {
+          setCollaborators((prev) => {
+            const next = {};
+            data.users.forEach((user) => {
+              if (!user?.user_id) return;
+              next[user.user_id] = {
+                ...(prev[user.user_id] || {}),
+                user_id: user.user_id,
+                username: user.username,
+                color: pickColorForUser(user.user_id),
+              };
+            });
+            return next;
+          });
+          return;
+        }
+
+        if (data?.type === 'cursor_move' && data.user_id) {
+          setCollaborators((prev) => {
+            const current = prev[data.user_id];
+            if (!current) return prev;
+            return {
+              ...prev,
+              [data.user_id]: {
+                ...current,
+                cursor: { x: data.x, y: data.y },
+              },
+            };
+          });
+          return;
+        }
+
+        if (data?.type === 'yjs_update' && data.user_id !== admin.id && Array.isArray(data.update)) {
+          if (typeof remoteYjsHandlerRef.current === 'function') {
+            remoteYjsHandlerRef.current(data.update);
+          }
+          return;
+        }
+
+        if (data?.type === 'schema_snapshot' && data.schema && typeof data.schema === 'object') {
+          if (typeof schemaSnapshotHandlerRef.current === 'function') {
+            schemaSnapshotHandlerRef.current(data.schema);
+          }
+          return;
+        }
+
+        if (data?.type === 'schema_update' && data.user_id !== admin.id && data.schema && typeof data.schema === 'object') {
+          if (typeof schemaSnapshotHandlerRef.current === 'function') {
+            schemaSnapshotHandlerRef.current(data.schema);
+          }
+        }
+      };
+
+      socket.onclose = () => {
+        if (closedByClientRef.current || !formId || formId === 'new') return;
+        const attempt = reconnectAttemptsRef.current;
+        const delay = Math.min(5000, 400 * 2 ** attempt);
+        reconnectAttemptsRef.current += 1;
+        reconnectTimerRef.current = setTimeout(connectSocket, delay);
+      };
+    };
+
+    connectSocket();
 
     return () => {
-      channel.unsubscribe();
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      closedByClientRef.current = true;
+      const socket = socketRef.current;
+      socketRef.current = null;
+      if (socket) socket.close();
+      setCollaborators({});
     };
-  }, [formId, admin]);
+  }, [formId, admin?.id, sendMessage, pickColorForUser]);
 
   return {
     collaborators,
     broadcastCursor,
     broadcastSync,
-    channel: channelRef.current
+    broadcastSchema,
+    onRemoteYjsUpdate,
+    onSchemaSnapshot,
   };
 }

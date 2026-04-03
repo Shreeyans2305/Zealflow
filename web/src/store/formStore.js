@@ -95,6 +95,8 @@ const maxHistory = 100;
 
 // Module-level debounce timer for auto-saving schema changes to the API
 let _autoSaveTimer = null;
+let _yDocUpdateHandler = null;
+let _yMapObserver = null;
 
 function scheduleAutoSave(formId, schema) {
   clearTimeout(_autoSaveTimer);
@@ -124,6 +126,20 @@ export const useFormStore = create((set, get) => ({
   yMap: null,
   isRemoteUpdate: false,
 
+  resetYjsDoc: () => {
+    const { yDoc, yMap } = get();
+    if (_yDocUpdateHandler) {
+      yDoc.off('update', _yDocUpdateHandler);
+      _yDocUpdateHandler = null;
+    }
+    if (_yMapObserver && yMap) {
+      yMap.unobserveDeep(_yMapObserver);
+      _yMapObserver = null;
+    }
+    yDoc.destroy();
+    set({ yDoc: new Y.Doc(), yMap: null, isRemoteUpdate: false });
+  },
+
   // ---- API-backed initialisation ----
 
   initForms: async () => {
@@ -148,28 +164,59 @@ export const useFormStore = create((set, get) => ({
     }
   },
 
-  setYjsProvider: (broadcastFn) => {
-    const { yDoc } = get();
-    yDoc.on('update', (update, origin) => {
-      // Only broadcast if the update was generated locally (not from a remote sync)
-      if (origin !== 'remote') {
-        broadcastFn(update);
-      }
-    });
+  setYjsProvider: (broadcastFn, broadcastSchemaFn = null) => {
+    const { yDoc, schema, yMap: existingMap } = get();
 
-    // Initialize yMap
+    if (_yDocUpdateHandler) {
+      yDoc.off('update', _yDocUpdateHandler);
+      _yDocUpdateHandler = null;
+    }
+    if (_yMapObserver && existingMap) {
+      existingMap.unobserveDeep(_yMapObserver);
+      _yMapObserver = null;
+    }
+
     const yMap = yDoc.getMap('schema');
     set({ yMap });
 
+    _yDocUpdateHandler = (update, origin) => {
+      // Only broadcast if the update was generated locally (not from a remote sync)
+      if (origin !== 'remote') {
+        broadcastFn(update);
+        if (broadcastSchemaFn) {
+          try {
+            broadcastSchemaFn(yMap.toJSON());
+          } catch (err) {
+            console.error('[Zealflow] schema broadcast failed:', err?.message || err);
+          }
+        }
+      }
+    };
+    yDoc.on('update', _yDocUpdateHandler);
+
+    // Seed current schema into empty doc so collaborators receive diffs from a consistent baseline.
+    if (yMap.size === 0 && schema) {
+      yDoc.transact(() => {
+        Object.entries(schema).forEach(([key, value]) => {
+          yMap.set(key, value);
+        });
+      }, 'remote');
+    }
+
     // Handle incoming updates from Yjs
-    yMap.observeDeep(() => {
-      if (get().isRemoteUpdate) return;
-      
+    _yMapObserver = () => {
       const remoteSchema = yMap.toJSON();
       if (Object.keys(remoteSchema).length > 0) {
-        set({ schema: ensureSchemaDefaults(remoteSchema) });
+        const nextSchema = ensureSchemaDefaults(remoteSchema);
+        set((state) => ({
+          schema: nextSchema,
+          forms: state.forms.map((f) =>
+            f.id === state.currentFormId ? { ...f, schema: nextSchema, title: nextSchema.title } : f
+          ),
+        }));
       }
-    });
+    };
+    yMap.observeDeep(_yMapObserver);
   },
 
   applyRemoteUpdate: (update) => {
@@ -177,6 +224,36 @@ export const useFormStore = create((set, get) => ({
     set({ isRemoteUpdate: true });
     try {
       Y.applyUpdate(yDoc, new Uint8Array(update), 'remote');
+    } finally {
+      set({ isRemoteUpdate: false });
+    }
+  },
+
+  applyRemoteSchemaSnapshot: (schemaPayload) => {
+    if (!schemaPayload || typeof schemaPayload !== 'object') return;
+    const nextSchema = ensureSchemaDefaults(schemaPayload);
+    const { yDoc, yMap } = get();
+
+    set({ isRemoteUpdate: true });
+    try {
+      if (yMap) {
+        yDoc.transact(() => {
+          const incomingKeys = new Set(Object.keys(nextSchema));
+          Array.from(yMap.keys()).forEach((key) => {
+            if (!incomingKeys.has(key)) yMap.delete(key);
+          });
+          Object.entries(nextSchema).forEach(([key, value]) => {
+            yMap.set(key, value);
+          });
+        }, 'remote');
+      }
+
+      set((state) => ({
+        schema: nextSchema,
+        forms: state.forms.map((f) =>
+          f.id === state.currentFormId ? { ...f, schema: nextSchema, title: nextSchema.title } : f
+        ),
+      }));
     } finally {
       set({ isRemoteUpdate: false });
     }

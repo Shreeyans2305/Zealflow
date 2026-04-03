@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routers import auth, forms, responses
+from routers import auth, collaboration_ws, forms, responses
 
 app = FastAPI(title="Zealflow API", version="1.0.0")
 
@@ -42,6 +42,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(forms.router, prefix="/api/forms", tags=["forms"])
 app.include_router(responses.router, prefix="/api/forms", tags=["responses"])
+app.include_router(collaboration_ws.router, tags=["collaboration"])
 
 
 @app.get("/")
