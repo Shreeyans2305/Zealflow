@@ -4,6 +4,44 @@ import { evaluateFieldVisibility } from '../../utils/logicEngine';
 import { fieldRegistry } from '../../registry/fieldRegistry';
 import { api } from '../../utils/apiClient';
 
+function formatDeadline(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString();
+}
+
+function getTimedSessionStorageKey(formId) {
+  return `zealflow_timed_session_${formId}`;
+}
+
+function readCachedTimedSession(formId) {
+  try {
+    const raw = sessionStorage.getItem(getTimedSessionStorageKey(formId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedTimedSession(formId, session) {
+  try {
+    sessionStorage.setItem(getTimedSessionStorageKey(formId), JSON.stringify(session));
+  } catch {
+    // no-op
+  }
+}
+
+function clearCachedTimedSession(formId) {
+  try {
+    sessionStorage.removeItem(getTimedSessionStorageKey(formId));
+  } catch {
+    // no-op
+  }
+}
+
 export default function Stage() {
   const { id } = useParams();
   const [schema, setSchema] = useState(null);
@@ -11,6 +49,9 @@ export default function Stage() {
   const [answers, setAnswers] = useState({});
   const [respondent, setRespondent] = useState({ name: '', email: '' });
   const [pageIndex, setPageIndex] = useState(0);
+  const [deadlineAt, setDeadlineAt] = useState(null);
+  const [isClosedByDeadline, setIsClosedByDeadline] = useState(false);
+  const [timedSession, setTimedSession] = useState({ enabled: false, seconds: 0, remaining: 0, token: null });
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -24,12 +65,83 @@ export default function Stage() {
     api.get(`/api/forms/${id}`)
       .then((form) => {
         // API returns the full DB row; schema is nested under `schema` key
-        setSchema(form.schema || form);
+        const nextSchema = form.schema || form;
+        setSchema(nextSchema);
+        const dl = nextSchema?.settings?.deadlineAt || null;
+        setDeadlineAt(dl);
+        if (dl && new Date(dl).getTime() < Date.now()) {
+          setIsClosedByDeadline(true);
+        }
         setPageIndex(0);
+
+        const isTimedEnabled = Boolean(nextSchema?.settings?.timedResponseEnabled);
+        const configuredSeconds = Number(nextSchema?.settings?.timedResponseSeconds || 0);
+        if (!isTimedEnabled || configuredSeconds <= 0) {
+          clearCachedTimedSession(id);
+          return api.post(`/api/forms/${id}/open`, {});
+        }
+
+        const cached = readCachedTimedSession(id);
+        if (cached?.token && Number(cached.startedAt) > 0 && Number(cached.seconds) === configuredSeconds) {
+          const elapsed = Math.max(0, Math.floor(Date.now() / 1000) - Number(cached.startedAt));
+          const remaining = Math.max(0, configuredSeconds - elapsed);
+
+          setTimedSession({
+            enabled: true,
+            seconds: configuredSeconds,
+            remaining,
+            token: cached.token,
+          });
+          setLoadState('ready');
+          return null;
+        }
+
+        return api.post(`/api/forms/${id}/open`, {});
+      })
+      .then((session) => {
+        if (!session) return;
+        const seconds = Number(session.timed_seconds || 0);
+        const enabled = Boolean(session.timed_enabled) && seconds > 0;
+        setTimedSession({
+          enabled,
+          seconds,
+          remaining: seconds,
+          token: session.session_token || null,
+        });
+        if (enabled && session.session_token && Number(session.started_at) > 0) {
+          writeCachedTimedSession(id, {
+            token: session.session_token,
+            startedAt: Number(session.started_at),
+            seconds,
+          });
+        } else {
+          clearCachedTimedSession(id);
+        }
+        if (session.deadline_at) setDeadlineAt(session.deadline_at);
         setLoadState('ready');
       })
-      .catch(() => setLoadState('error'));
+      .catch((err) => {
+        if ((err?.message || '').toLowerCase().includes('deadline')) {
+          setIsClosedByDeadline(true);
+          setLoadState('ready');
+          return;
+        }
+        setLoadState('error');
+      });
   }, [id]);
+
+  useEffect(() => {
+    if (!timedSession.enabled || timedSession.seconds <= 0) return;
+    const timer = setInterval(() => {
+      setTimedSession((prev) => {
+        if (!prev.enabled) return prev;
+        const next = Math.max(0, prev.remaining - 1);
+        return { ...prev, remaining: next };
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [timedSession.enabled, timedSession.seconds]);
 
   const visibilityMap = useMemo(() => {
     if (!schema) return {};
@@ -53,6 +165,22 @@ export default function Stage() {
             This form link is invalid or the form has been removed.
           </p>
           <Link to="/" className="btn-primary inline-flex">Return to Directory</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (isClosedByDeadline) {
+    return (
+      <div className="min-h-screen bg-[var(--color-bg-base)] flex items-center justify-center p-6">
+        <div className="max-w-[720px] w-full card text-center p-12">
+          <h1 className="text-4xl display-font text-[var(--color-text-primary)] mb-2">Form Closed</h1>
+          <p className="text-[15px] text-[var(--color-text-secondary)] mt-4">
+            This form is no longer accepting responses.
+          </p>
+          {deadlineAt && (
+            <p className="text-[13px] text-[var(--color-text-tertiary)] mt-2">Deadline: {formatDeadline(deadlineAt)}</p>
+          )}
         </div>
       </div>
     );
@@ -84,6 +212,11 @@ export default function Stage() {
       return;
     }
 
+    if (timedSession.enabled && timedSession.remaining <= 0) {
+      setSubmitError('Time limit exceeded for this form.');
+      return;
+    }
+
     if (!isAnonymousAllowed && (!respondent.name.trim() || !respondent.email.trim())) {
       setSubmitError('Please provide your name and email to continue.');
       return;
@@ -93,10 +226,14 @@ export default function Stage() {
     try {
       await api.post(`/api/forms/${id}/submit`, {
         data: answers,
-        meta: isAnonymousAllowed
-          ? null
-          : { submitter_name: respondent.name.trim(), submitter_email: respondent.email.trim() },
+        meta: {
+          ...(isAnonymousAllowed
+            ? {}
+            : { submitter_name: respondent.name.trim(), submitter_email: respondent.email.trim() }),
+          ...(timedSession.token ? { session_token: timedSession.token } : {}),
+        },
       });
+      clearCachedTimedSession(id);
       setIsSubmitted(true);
     } catch (err) {
       setSubmitError(err.message || 'Submission failed. Please try again.');
@@ -131,6 +268,17 @@ export default function Stage() {
 
       <div className="max-w-[720px] mx-auto px-6 py-[96px]">
         <h1 className="text-5xl display-font text-[var(--color-text-primary)] mb-[64px]">{schema.title}</h1>
+
+        {(deadlineAt || timedSession.enabled) && (
+          <div className="mb-6 max-w-[500px] text-[13px] text-[var(--color-text-secondary)] space-y-1">
+            {deadlineAt && <div>Deadline: {formatDeadline(deadlineAt)}</div>}
+            {timedSession.enabled && (
+              <div className={timedSession.remaining <= 30 ? 'text-[var(--color-error)] font-medium' : ''}>
+                Time remaining: {Math.floor(timedSession.remaining / 60)}:{String(timedSession.remaining % 60).padStart(2, '0')}
+              </div>
+            )}
+          </div>
+        )}
 
         {fieldsByPage.length > 1 && (
           <div className="mb-8 max-w-[500px]">
@@ -216,7 +364,7 @@ export default function Stage() {
                 )}
               <button
                 type="submit"
-                disabled={submitting}
+                  disabled={submitting || (timedSession.enabled && timedSession.remaining <= 0)}
                 className="btn-primary px-8 py-3 text-[16px] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? 'Submitting…' : isLastPage ? (schema.settings?.submitLabel || 'Submit Form') : 'Next'}

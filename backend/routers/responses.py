@@ -1,15 +1,112 @@
 import csv
 import io
 import json
+import time
+from datetime import datetime, timezone
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from models.responses import SubmitRequest
 from routers.auth import get_current_admin
+from services.auth_service import ALGORITHM, SECRET_KEY
 from services.supabase_client import get_supabase
 
 router = APIRouter()
+
+
+def _normalize_ip(ip: str | None) -> str | None:
+    if not ip:
+        return None
+    value = ip.strip()
+    if value in {"::1", "0:0:0:0:0:0:0:1", "localhost"}:
+        return "127.0.0.1"
+    if value.startswith("::ffff:"):
+        return value.replace("::ffff:", "", 1)
+    return value
+
+
+def _client_ip(request: Request) -> str | None:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        first = forwarded_for.split(",")[0].strip()
+        return _normalize_ip(first)
+
+    if request.client:
+        return _normalize_ip(request.client.host)
+
+    return None
+
+
+def _parse_deadline(deadline_at: str | None) -> datetime | None:
+    if not deadline_at:
+        return None
+    try:
+        value = deadline_at.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _is_deadline_expired(settings: dict) -> bool:
+    deadline = _parse_deadline(settings.get("deadlineAt"))
+    if not deadline:
+        return False
+    return datetime.now(timezone.utc) > deadline
+
+
+def _resolve_timed_seconds(settings: dict) -> int:
+    timed_enabled = bool(settings.get("timedResponseEnabled"))
+    raw_seconds = int(settings.get("timedResponseSeconds") or 0)
+    if timed_enabled and raw_seconds <= 0:
+        return 60
+    return max(0, raw_seconds)
+
+
+@router.post("/{form_id}/open")
+def open_form_session(form_id: str, request: Request):
+    sb = get_supabase()
+
+    form_result = (
+        sb.table("forms").select("id,is_published,schema").eq("id", form_id).maybe_single().execute()
+    )
+    if not form_result.data:
+        raise HTTPException(status_code=404, detail="Form not found")
+
+    form = form_result.data
+    settings = (form.get("schema") or {}).get("settings") or {}
+
+    if _is_deadline_expired(settings):
+        raise HTTPException(status_code=403, detail="This form is closed. The deadline has passed.")
+
+    ip = _client_ip(request)
+    timed_enabled = bool(settings.get("timedResponseEnabled"))
+    timed_seconds = _resolve_timed_seconds(settings)
+    started_at = int(time.time())
+
+    print(f"[Zealflow] Form opened: form_id={form_id}, ip={ip}, timed={timed_enabled}")
+
+    session_token = None
+    if timed_enabled and timed_seconds > 0:
+        payload = {
+            "form_id": form_id,
+            "ip": ip,
+            "started_at": started_at,
+            "exp": started_at + timed_seconds + 900,
+        }
+        session_token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+    return {
+        "timed_enabled": timed_enabled,
+        "timed_seconds": timed_seconds,
+        "session_token": session_token,
+        "started_at": started_at,
+        "deadline_at": settings.get("deadlineAt"),
+    }
 
 
 @router.post("/{form_id}/submit")
@@ -24,6 +121,10 @@ def submit_response(form_id: str, body: SubmitRequest, request: Request):
 
     schema = form_result.data.get("schema") or {}
     settings = schema.get("settings") or {}
+
+    if _is_deadline_expired(settings):
+        raise HTTPException(status_code=403, detail="This form is closed. The deadline has passed.")
+
     allow_anonymous = settings.get("allowAnonymousEntries", True)
 
     if not allow_anonymous:
@@ -35,7 +136,34 @@ def submit_response(form_id: str, body: SubmitRequest, request: Request):
                 detail="This form does not allow anonymous submissions. Name and email are required.",
             )
 
-    ip = request.client.host if request.client else None
+    timed_enabled = bool(settings.get("timedResponseEnabled"))
+    timed_seconds = _resolve_timed_seconds(settings)
+    if timed_enabled and timed_seconds > 0:
+        session_token = (body.meta or {}).get("session_token")
+        if not session_token:
+            raise HTTPException(status_code=400, detail="Timed response is enabled. Session token is required.")
+
+        try:
+            payload = jwt.decode(session_token, SECRET_KEY, algorithms=[ALGORITHM])
+        except Exception:
+            raise HTTPException(status_code=400, detail="Timed response session is invalid or expired.")
+
+        if payload.get("form_id") != form_id:
+            raise HTTPException(status_code=400, detail="Timed response session does not match this form.")
+
+        request_ip = _client_ip(request)
+        if payload.get("ip") and request_ip and payload.get("ip") != request_ip:
+            raise HTTPException(status_code=400, detail="Timed response session IP mismatch.")
+
+        started_at = int(payload.get("started_at") or 0)
+        if started_at <= 0:
+            raise HTTPException(status_code=400, detail="Timed response session missing start time.")
+
+        elapsed = int(time.time()) - started_at
+        if elapsed > timed_seconds:
+            raise HTTPException(status_code=403, detail="Time limit exceeded for this form.")
+
+    ip = _client_ip(request)
 
     payload_data = dict(body.data or {})
     if body.meta:

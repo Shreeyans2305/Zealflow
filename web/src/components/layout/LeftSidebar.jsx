@@ -60,6 +60,76 @@ export default function LeftSidebar() {
             className="w-[16px] h-[16px] accent-[var(--color-accent)]"
           />
         </div>
+
+        <div className="pt-3 border-t border-[var(--color-border-warm)] space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] text-[var(--color-text-secondary)]">Deadline</span>
+            <input
+              type="checkbox"
+              checked={Boolean(schema?.settings?.deadlineAt)}
+              onChange={(e) => {
+                if (!e.target.checked) {
+                  updateSettings({ deadlineAt: null });
+                  return;
+                }
+                const defaultValue = new Date(Date.now() + 24 * 60 * 60 * 1000);
+                const isoLocal = new Date(defaultValue.getTime() - defaultValue.getTimezoneOffset() * 60000)
+                  .toISOString()
+                  .slice(0, 16);
+                updateSettings({ deadlineAt: new Date(isoLocal).toISOString() });
+              }}
+              className="w-[16px] h-[16px] accent-[var(--color-accent)]"
+            />
+          </div>
+          {schema?.settings?.deadlineAt && (
+            <input
+              type="datetime-local"
+              value={new Date(new Date(schema.settings.deadlineAt).getTime() - new Date(schema.settings.deadlineAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+              onChange={(e) => {
+                const value = e.target.value;
+                updateSettings({ deadlineAt: value ? new Date(value).toISOString() : null });
+              }}
+              className="input-base w-full text-[12px]"
+            />
+          )}
+        </div>
+
+        <div className="pt-3 border-t border-[var(--color-border-warm)] space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] text-[var(--color-text-secondary)]">Timed response</span>
+            <input
+              type="checkbox"
+              checked={Boolean(schema?.settings?.timedResponseEnabled)}
+              onChange={(e) => {
+                const enabled = e.target.checked;
+                if (!enabled) {
+                  updateSettings({ timedResponseEnabled: false });
+                  return;
+                }
+
+                const current = Number(schema?.settings?.timedResponseSeconds || 0);
+                updateSettings({
+                  timedResponseEnabled: true,
+                  timedResponseSeconds: current > 0 ? current : 60,
+                });
+              }}
+              className="w-[16px] h-[16px] accent-[var(--color-accent)]"
+            />
+          </div>
+          {schema?.settings?.timedResponseEnabled && (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={10}
+                step={10}
+                value={schema?.settings?.timedResponseSeconds || 60}
+                onChange={(e) => updateSettings({ timedResponseSeconds: Math.max(10, Number(e.target.value) || 10) })}
+                className="input-base w-full text-[12px]"
+              />
+              <span className="text-[11px] text-[var(--color-text-secondary)]">sec</span>
+            </div>
+          )}
+        </div>
       </div>
       
       <div className="p-4 flex-grow relative pb-12 w-full">

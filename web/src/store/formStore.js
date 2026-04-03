@@ -19,6 +19,9 @@ const createEmptySchema = (overrides = {}) => ({
     submitLabel: 'Submit',
     thankYouMessage: 'Thank you!',
     allowAnonymousEntries: true,
+    deadlineAt: null,
+    timedResponseEnabled: false,
+    timedResponseSeconds: 0,
     pages: [{ id: 'page_1', title: 'Page 1' }],
     mailingListEmails: [],
     publishEmailMessage: 'We just published a new form. Please take a look and submit a response.',
@@ -43,6 +46,22 @@ const ensureSchemaDefaults = (schema) => {
 
   if (typeof next.settings.allowAnonymousEntries !== 'boolean') {
     next.settings.allowAnonymousEntries = true;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(next.settings, 'deadlineAt')) {
+    next.settings.deadlineAt = null;
+  }
+
+  if (typeof next.settings.timedResponseEnabled !== 'boolean') {
+    next.settings.timedResponseEnabled = false;
+  }
+
+  if (typeof next.settings.timedResponseSeconds !== 'number' || Number.isNaN(next.settings.timedResponseSeconds)) {
+    next.settings.timedResponseSeconds = 0;
+  }
+
+  if (next.settings.timedResponseEnabled && next.settings.timedResponseSeconds <= 0) {
+    next.settings.timedResponseSeconds = 60;
   }
 
   if (!Array.isArray(next.settings.pages) || next.settings.pages.length === 0) {
