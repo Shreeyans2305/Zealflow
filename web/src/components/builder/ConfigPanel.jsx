@@ -1,6 +1,7 @@
-import { X } from 'lucide-react';
+import { X, Trash2 } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
 import { useFormStore } from '../../store/formStore';
+import { fieldRegistry } from '../../registry/fieldRegistry';
 
 export default function ConfigPanel() {
   const isConfigPanelOpen = useUIStore(state => state.isConfigPanelOpen);
@@ -12,71 +13,92 @@ export default function ConfigPanel() {
 
   const selectedField = schema.fields.find(f => f.id === selectedFieldId);
 
+  // Derive the specific configuration component
+  const SpecificConfigComponent = selectedField 
+    ? (fieldRegistry[selectedField.type]?.ConfigComponent || null)
+    : null;
+
   return (
-    <aside 
-      className={`absolute right-0 top-0 bottom-0 w-[400px] bg-surface-container glass-panel ghost-border border-l shadow-2xl transition-transform duration-300 ease-out z-40 flex flex-col ${
-        isConfigPanelOpen ? 'translate-x-0' : 'translate-x-full'
-      }`}
-    >
-      <div className="flex items-center justify-between p-6">
-        <h2 className="text-xs tracking-[0.2em] uppercase font-semibold text-on-surface-variant">Properties</h2>
-        <button 
-          onClick={deselectField} 
-          className="text-on-surface-variant hover:text-on-surface p-2 rounded-full hover:bg-surface-container-high transition-colors"
-        >
-          <X size={16} />
-        </button>
-      </div>
+    <>
+      <div 
+        className={`fixed inset-0 backdrop-blur z-40 transition-opacity duration-200 ease-out ${
+          isConfigPanelOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={deselectField}
+      />
 
-      {selectedField ? (
-        <div className="p-8 overflow-y-auto flex-1">
-          <div className="space-y-8">
-            <div>
-              <label className="block text-sm text-on-surface-variant mb-2">Label</label>
-              <input 
-                type="text" 
-                value={selectedField.label}
-                onChange={(e) => updateField(selectedField.id, { label: e.target.value })}
-                className="w-full px-4 py-3 bg-surface-container-low ghost-border border rounded-md focus:outline-none focus:border-primary text-on-surface transition-all text-sm"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm text-on-surface-variant mb-2">Placeholder</label>
-              <input 
-                type="text" 
-                value={selectedField.placeholder || ''}
-                onChange={(e) => updateField(selectedField.id, { placeholder: e.target.value })}
-                className="w-full px-4 py-3 bg-surface-container-low ghost-border border rounded-md focus:outline-none focus:border-primary text-on-surface transition-all text-sm"
-              />
-            </div>
+      <aside 
+        className={`absolute right-0 top-0 bottom-0 w-[400px] bg-[#FFFFFF] border-l border-[var(--color-border-warm)] shadow-2xl transition-transform duration-200 ease-out z-50 flex flex-col ${
+          isConfigPanelOpen ? 'translate-x-0' : 'translate-x-[110%]'
+        }`}
+      >
+        <div className="flex items-center justify-between p-8 border-b border-[var(--color-border-warm)]">
+          <h2 className="label-upper text-[var(--color-text-secondary)]">Settings</h2>
+          <button 
+            onClick={deselectField} 
+            className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-1 rounded transition-colors"
+          >
+            <X size={18} strokeWidth={1.5} />
+          </button>
+        </div>
 
-            <div className="flex items-center justify-between pt-6 border-t border-white/5">
-              <label htmlFor="required" className="text-sm text-on-surface font-medium cursor-pointer">Required Field</label>
-              <input 
-                type="checkbox" 
-                id="required" 
-                checked={selectedField.required}
-                onChange={(e) => updateField(selectedField.id, { required: e.target.checked })}
-                className="w-5 h-5 accent-primary bg-surface-container-low border-none rounded cursor-pointer"
-              />
-            </div>
-            
-            <div className="pt-12">
-               <button 
-                onClick={() => { deleteField(selectedField.id); deselectField(); }}
-                className="w-full py-3 px-4 bg-transparent ghost-border border text-error rounded hover:bg-error/10 font-medium text-sm transition-colors text-center"
-               >
-                 Destroy Node
-               </button>
+        {selectedField ? (
+          <div className="p-8 overflow-y-auto flex-1">
+            <div className="space-y-8">
+              {/* Universal Properties */}
+              <div>
+                <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-2">Label</label>
+                <input 
+                  type="text" 
+                  value={selectedField.label}
+                  onChange={(e) => updateField(selectedField.id, { label: e.target.value })}
+                  className="input-base w-full"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-2">Placeholder text</label>
+                <input 
+                  type="text" 
+                  value={selectedField.placeholder || ''}
+                  onChange={(e) => updateField(selectedField.id, { placeholder: e.target.value })}
+                  className="input-base w-full"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-8 border-t border-[var(--color-border-warm)]">
+                <label htmlFor="required" className="text-[15px] font-medium text-[var(--color-text-primary)] cursor-pointer">Require an answer</label>
+                <input 
+                  type="checkbox" 
+                  id="required" 
+                  checked={selectedField.required}
+                  onChange={(e) => updateField(selectedField.id, { required: e.target.checked })}
+                  className="w-[18px] h-[18px] accent-[var(--color-accent)] cursor-pointer"
+                />
+              </div>
+
+              {/* Dynamic Specific Config Component from Registry */}
+              {SpecificConfigComponent && (
+                <SpecificConfigComponent field={selectedField} updateField={updateField} />
+              )}
+              
+              <div className="pt-12">
+                 <button 
+                  onClick={() => { deleteField(selectedField.id); deselectField(); }}
+                  className="w-full py-3 px-4 flex items-center justify-center gap-2 bg-transparent border border-[var(--color-error)] text-[var(--color-error)] rounded-[8px] font-medium text-[14px] hover:bg-red-50 transition-colors"
+                 >
+                   <Trash2 size={16} strokeWidth={1.5} />
+                   Delete this block
+                 </button>
+              </div>
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="p-8 text-center text-sm text-on-surface-variant flex flex-col items-center justify-center h-full opacity-50">
-            <p>Awaiting selection.</p>
-        </div>
-      )}
-    </aside>
+        ) : (
+          <div className="p-8 text-center text-[15px] text-[var(--color-text-tertiary)] flex flex-col items-center justify-center h-full">
+              <p>No block selected.</p>
+          </div>
+        )}
+      </aside>
+    </>
   );
 }

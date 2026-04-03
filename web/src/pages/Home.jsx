@@ -22,42 +22,34 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col items-center justify-center relative overflow-hidden">
-      {/* Background ambient glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-primary opacity-20 blur-[120px] rounded-full pointer-events-none"></div>
+    <div className="min-h-screen bg-[var(--color-bg-base)] flex flex-col items-center justify-center p-6 text-[var(--color-text-primary)] transition-all duration-150 ease-out">
       
-      <div className="relative z-10 w-full max-w-lg p-8 glass-panel rounded-xl ghost-border ambient-shadow text-center">
-        <h1 className="text-display-lg text-on-surface font-semibold mb-3 display-font">The Architect</h1>
-        <p className="text-on-surface-variant font-medium mb-12">
-          Design structural forms with precision.
+      <div className="w-full max-w-[720px] flex flex-col items-center text-center">
+        <h1 className="text-5xl display-font mb-4 text-[var(--color-text-primary)]">The Architect</h1>
+        <p className="text-[17px] text-[var(--color-text-secondary)] mb-12 max-w-sm">
+          Design structural forms with quiet precision and intentional empty space.
         </p>
 
-        <div className="flex flex-col gap-6 w-full px-6">
+        <div className="flex flex-col sm:flex-row gap-4 w-full justify-center max-w-sm">
           <button 
             onClick={() => handleLogin('admin')}
-            className="w-full lit-gradient text-on-primary py-4 rounded-md font-medium text-lg uppercase tracking-wide hover:opacity-90 transition-opacity"
+            className="btn-primary w-full sm:w-auto"
           >
-            Enter as Admin
+            Enter Workspace
           </button>
           
-          <div className="flex items-center gap-4 text-on-surface-variant text-sm">
-            <div className="h-px bg-surface-container-highest flex-1"></div>
-            <span>OR</span>
-            <div className="h-px bg-surface-container-highest flex-1"></div>
-          </div>
-
           <button 
             onClick={() => handleLogin('user')}
-            className="w-full bg-transparent ghost-border text-on-surface py-4 rounded-md font-medium text-lg hover:bg-surface-container-high transition-colors"
+            className="btn-secondary w-full sm:w-auto"
           >
-            Enter as User
+            View Demo Form
           </button>
         </div>
       </div>
       
-      <p className="absolute bottom-8 text-on-surface-variant text-sm italic">
-        Data persistance strictly retained via Local Storage.
-      </p>
+      <div className="absolute bottom-12 text-center text-sm text-[var(--color-text-tertiary)]">
+        Data persistance via Local Storage.
+      </div>
     </div>
   );
 }

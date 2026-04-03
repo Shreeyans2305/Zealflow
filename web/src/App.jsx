@@ -1,7 +1,10 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
+import { ModalProvider } from './contexts/ModalContext';
 import Home from './pages/Home';
 import Admin from './pages/Admin';
+import Profile from './pages/Profile';
+import Settings from './pages/Settings';
 import Workshop from './components/builder/Workshop';
 import Stage from './components/stage/Stage';
 
@@ -12,7 +15,8 @@ function AdminRoute({ children }) {
 
 function App() {
   return (
-    <Router>
+    <ModalProvider>
+      <Router>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route 
@@ -23,6 +27,8 @@ function App() {
             </AdminRoute>
           } 
         />
+        <Route path="/profile" element={<AdminRoute><Profile /></AdminRoute>} />
+        <Route path="/settings" element={<AdminRoute><Settings /></AdminRoute>} />
         <Route 
           path="/builder/:id" 
           element={
@@ -39,6 +45,7 @@ function App() {
         <Route path="/vault/:id" element={<Navigate to="/admin" replace />} />
       </Routes>
     </Router>
+    </ModalProvider>
   );
 }
 

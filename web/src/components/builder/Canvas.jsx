@@ -31,8 +31,13 @@ export default function Canvas() {
   const [activeId, setActiveId] = useState(null);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
 
+  // We slightly increase activation constraint so click events fire correctly
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -57,18 +62,18 @@ export default function Canvas() {
 
   const dropAnimation = {
     sideEffects: defaultDropAnimationSideEffects({
-      styles: { active: { opacity: '0.4' } }
+      styles: { active: { opacity: '0.9' } }
     }),
   };
 
   return (
     <div 
-      className="w-full max-w-2xl min-h-full pb-32 pt-8 relative z-10"
+      className="w-full max-w-[720px] min-h-full pb-32 pt-8 relative z-10"
       onClick={(e) => {
           if (e.target === e.currentTarget) deselectField();
       }}
     >
-      <h1 className="text-display-lg display-font mb-12 text-on-surface bg-transparent border-none outline-none -ml-2 rounded transition-all">
+      <h1 className="text-4xl display-font mb-12 text-[var(--color-text-primary)] transition-all">
         {schema.title}
       </h1>
 
@@ -80,16 +85,15 @@ export default function Canvas() {
         onDragCancel={handleDragCancel}
         modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
       >
-        {/* We use vertical whitespace gap-6 instead of tight grids or lines */}
-        <div className="flex flex-col gap-6 relative min-h-[200px]">
+        <div className="flex flex-col gap-8 relative min-h-[200px]">
           <SortableContext items={schema.fields.map(f => f.id)} strategy={verticalListSortingStrategy}>
             {schema.fields.map(field => (
               <FieldCard key={field.id} field={field} />
             ))}
             
             {schema.fields.length === 0 && (
-                <div className="text-center p-12 bg-surface-container-low ghost-border border rounded-lg text-on-surface-variant flex flex-col items-center gap-3">
-                    <span className="text-sm">The slate is empty.</span>
+                <div className="text-center p-12 bg-[#FFFFFF] border border-[var(--color-border-warm)] rounded-[12px] text-[var(--color-text-secondary)] flex flex-col items-center gap-3">
+                    <span className="text-[15px]">The canvas is empty.</span>
                 </div>
             )}
           </SortableContext>
@@ -99,21 +103,6 @@ export default function Canvas() {
           {activeId && activeField ? <FieldCard field={activeField} isOverlay /> : null}
         </DragOverlay>
       </DndContext>
-
-      <div className="mt-12 relative flex justify-center z-40">
-        <button 
-          onClick={() => setIsPickerOpen(!isPickerOpen)}
-          className="flex items-center justify-center w-12 h-12 bg-surface-container-high text-on-surface rounded-full ambient-shadow hover:bg-surface-container-highest transition-all ghost-border focus:outline-none z-10"
-        >
-          <span className="text-2xl font-light leading-none">+</span>
-        </button>
-        
-        {isPickerOpen && (
-            <div className="absolute top-14 left-1/2 -translate-x-1/2 mt-4 w-64 bg-surface-container glass-panel rounded-xl ghost-border border ambient-shadow z-50 p-2 transform origin-top transition-all scale-100 opacity-100">
-                <FieldPicker onSelect={(type) => { addField(type); setIsPickerOpen(false); }} />
-            </div>
-        )}
-      </div>
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { produce } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
-
+import { fieldRegistry } from '../registry/fieldRegistry';
 const createEmptySchema = (overrides = {}) => ({
   id: `form_${uuidv4().slice(0, 8)}`,
   title: "Untitled form",
@@ -27,8 +28,9 @@ const initialSchema = createEmptySchema({ id: 'form_1' });
 const maxHistory = 100;
 
 export const useFormStore = create(
-  (set, get) => ({
-    forms: [initialSchema],
+  persist(
+    (set, get) => ({
+      forms: [initialSchema],
     currentFormId: initialSchema.id,
     schema: initialSchema,
     history: [structuredClone(initialSchema)],
@@ -149,14 +151,20 @@ export const useFormStore = create(
     // Field Actions
     addField: (type) => get().applyToCurrentSchema(draft => {
       const fieldId = `field_${uuidv4()}`;
+      const defaultFieldSchema = fieldRegistry[type]?.defaultSchema || {};
+      
       draft.fields.push({
         id: fieldId,
         type,
         label: "New Question",
-        placeholder: "Type your answer...",
+        placeholder: defaultFieldSchema.placeholder || "Type your answer...",
         required: false,
         validation: {},
-        meta: { hidden: false, width: "full" }
+        meta: { 
+            hidden: false, 
+            width: "full",
+            ...defaultFieldSchema 
+        }
       });
     }),
     updateField: (id, updates) => get().applyToCurrentSchema(draft => {
@@ -195,5 +203,8 @@ export const useFormStore = create(
     deleteLogicRule: (id) => get().applyToCurrentSchema(draft => {
       draft.logicRules = draft.logicRules.filter(r => r.id !== id);
     }),
-  })
-);
+  }),
+  {
+    name: 'zealflow-form-storage',
+  }
+));

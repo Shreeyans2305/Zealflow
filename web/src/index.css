@@ -1,28 +1,29 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-display: 'Manrope', system-ui, sans-serif;
+  --font-sans: 'DM Sans', sans-serif;
+  --font-display: 'Lora', serif;
   
-  /* Brand Primary - strictly for focus/action */
-  --color-primary: #4f46e5;
-  --color-primary-container: #3730a3;
-  --color-on-primary: #ffffff;
+  /* Color Palette (Light Theme Only) */
+  --color-bg-base: #FAFAF8;
+  --color-bg-surface: #F4F3EF;
+  --color-bg-hover: #EEECEA;
   
-  /* Nocturnal Architect Slate Palette */
-  --color-surface-bright: #3c4355;
-  --color-surface: #0b1326;
-  --color-surface-container: #171f33;
-  --color-surface-container-high: #242b40;
-  --color-surface-container-highest: #2d3449;
+  --color-border-warm: #E5E3DD;
   
-  /* Typography Colors */
-  --color-on-surface: #dae2fd;
-  --color-on-surface-variant: #9aa1bb;
+  --color-text-primary: #1C1B19;
+  --color-text-secondary: #6B6860;
+  --color-text-tertiary: #A8A49E;
   
-  /* Borders and utilities */
-  --color-outline-variant: rgba(218, 226, 253, 0.15); /* 15% opacity ghost border */
-  --color-error: #ffb4ab;
+  --color-accent: #C17F3E;
+  --color-accent-soft: #F5EBD8;
+  
+  --color-success: #4A7C59;
+  --color-error: #B84040;
+
+  /* Custom overrides for transitions */
+  --default-transition-timing-function: ease-out;
+  --default-transition-duration: 150ms;
 }
 
 @layer base {
@@ -33,32 +34,94 @@
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--color-surface);
-  color: var(--color-on-surface);
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
 }
 
 h1, h2, h3, .display-font {
   font-family: var(--font-display);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 
-/* Base custom utilities for Nocturnal Architect */
+/* Base custom utilities for Warm Minimal Human */
 @layer utilities {
-  .ghost-border {
-    border: 1px solid var(--color-outline-variant);
+  .btn-primary {
+    background-color: var(--color-accent);
+    color: white;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: 500;
+    transition: all 150ms ease-out;
+  }
+  .btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  .btn-secondary {
+    background-color: transparent;
+    border: 1px solid var(--color-border-warm);
+    color: var(--color-text-primary);
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: 500;
+    transition: all 150ms ease-out;
+  }
+  .btn-secondary:hover {
+    background-color: var(--color-bg-hover);
+  }
+
+  .card {
+    background-color: var(--color-bg-surface);
+    border: 1px solid var(--color-border-warm);
+    border-radius: 12px;
+    padding: 32px;
+    transition: all 150ms ease-out;
+  }
+  .card:hover {
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+
+  .input-base {
+    border: 1px solid var(--color-border-warm);
+    border-radius: 8px;
+    background-color: #FFFFFF;
+    padding: 10px 14px;
+    font-size: 15px;
+    color: var(--color-text-primary);
+    transition: all 150ms ease-out;
+  }
+  .input-base::placeholder {
+    color: var(--color-text-tertiary);
+  }
+  .input-base:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(193,127,62,0.12);
+  }
+
+  .label-upper {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+  }
+
+  .modal-glass {
+    background-color: #FFFFFF;
+    border-radius: 16px;
+    padding: 32px;
   }
   
-  .glass-panel {
-    background-color: rgba(23, 31, 51, 0.7);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
+  .backdrop-blur {
+    background-color: rgba(28,27,25,0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
   }
   
-  .ambient-shadow {
-    box-shadow: 0 0 64px 8px rgba(218, 226, 253, 0.08);
-  }
-  
-  .lit-gradient {
-    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-container));
-  }
+  /* Remove ALL legacy dark mode stuff simply by overriding default behavior */
 }

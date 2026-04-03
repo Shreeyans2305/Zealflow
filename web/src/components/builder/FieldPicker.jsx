@@ -1,27 +1,20 @@
-import { Type, Hash, Mail, Calendar, List } from 'lucide-react';
-
-const FIELD_TYPES = [
-    { id: 'text', label: 'Short Text', icon: <Type size={16} /> },
-    { id: 'longtext', label: 'Long Text', icon: <Type size={16} /> },
-    { id: 'number', label: 'Number', icon: <Hash size={16} /> },
-    { id: 'email', label: 'Email', icon: <Mail size={16} /> },
-    { id: 'date', label: 'Date', icon: <Calendar size={16} /> },
-    { id: 'dropdown', label: 'Dropdown', icon: <List size={16} /> }
-];
+import { getFieldTypesArray } from '../../registry/fieldRegistry';
 
 export default function FieldPicker({ onSelect }) {
+    const fields = getFieldTypesArray();
+
     return (
-        <div className="flex flex-col gap-1 p-2">
-            <div className="px-3 py-2 text-[10px] font-semibold text-on-surface-variant uppercase tracking-[0.1em] border-b border-white/5 mb-2 pb-3">
-                Nodes
+        <div className="flex flex-col p-1 bg-[#FFFFFF] rounded-[14px]">
+            <div className="px-4 py-3 label-upper border-b border-[var(--color-border-warm)] mb-2 mt-1">
+                Insert Element
             </div>
-            {FIELD_TYPES.map(type => (
+            {fields.map(type => (
                 <button
-                    key={type.id}
-                    onClick={() => onSelect(type.id)}
-                    className="flex items-center gap-4 px-3 py-3 text-sm text-on-surface hover:bg-surface-container-high rounded-md transition-colors w-full text-left"
+                    key={type.type}
+                    onClick={() => onSelect(type.type)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-[14px] font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] rounded-[8px] transition-colors w-full text-left"
                 >
-                    <div className="text-on-surface-variant opacity-70">
+                    <div className="text-[var(--color-text-secondary)]">
                         {type.icon}
                     </div>
                     {type.label}

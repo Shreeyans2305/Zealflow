@@ -1,0 +1,71 @@
+import { useFormStore } from '../../store/formStore';
+import { X } from 'lucide-react';
+import { useUIStore } from '../../store/uiStore';
+
+const TEMPLATES = [
+    { 
+        id: 'minimal', 
+        label: 'Warm Minimal', 
+        css: "/* Default Soft Canvas */\n:root {\n  --color-bg-base: #FAFAF8;\n  --color-bg-surface: #F4F3EF;\n  --color-border-warm: #E5E3DD;\n  --color-text-primary: #1C1B19;\n  --color-text-secondary: #6B6860;\n  --color-accent: #C17F3E;\n}" 
+    },
+    { 
+        id: 'dark', 
+        label: 'Nocturnal Glass', 
+        css: "/* Atmospheric Dark Mode */\n:root {\n  --color-bg-base: #000000;\n  --color-bg-surface: #111111;\n  --color-text-primary: #FFFFFF;\n  --color-text-secondary: #999999;\n  --color-border-warm: #222222;\n  --color-accent: #4F46E5;\n}\n.card, .input-base {\n  background: rgba(255,255,255,0.03);\n  backdrop-filter: blur(16px);\n  border-color: #333333;\n  color: #FFFFFF;\n}" 
+    },
+    { 
+        id: 'brutalist', 
+        label: 'Brutalist Studio', 
+        css: "/* High Contrast Industrial */\n:root {\n  --color-bg-base: #FFFFFF;\n  --color-bg-surface: #FFFFFF;\n  --color-text-primary: #000000;\n  --color-text-secondary: #000000;\n  --color-border-warm: #000000;\n  --color-accent: #FF0000;\n}\n.card, .input-base {\n  border: 3px solid #000000;\n  box-shadow: 6px 6px 0px #000000;\n  border-radius: 0px;\n}\nbutton.btn-primary {\n  border-radius: 0px;\n  text-transform: uppercase;\n  letter-spacing: 0.1em;\n}" 
+    }
+];
+
+export default function DesignPanel() {
+    const schema = useFormStore(state => state.schema);
+    const updateTheme = useFormStore(state => state.updateTheme);
+    const setTab = useUIStore(state => state.setTab);
+
+    return (
+        <aside className="absolute right-0 top-0 bottom-0 w-[400px] bg-[#FFFFFF] border-l border-[var(--color-border-warm)] shadow-2xl transition-transform duration-200 ease-out z-50 flex flex-col translate-x-0">
+            <div className="flex items-center justify-between p-8 border-b border-[var(--color-border-warm)] bg-[#FAFAF8]">
+                <div>
+                    <h2 className="label-upper text-[var(--color-text-primary)]">Design Engine</h2>
+                    <p className="text-[12px] text-[var(--color-text-secondary)] mt-1">Configure layout visuals.</p>
+                </div>
+                <button onClick={() => setTab('builder')} className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-2">
+                    <X size={18} strokeWidth={1.5} />
+                </button>
+            </div>
+            
+            <div className="p-8 overflow-y-auto flex-1 space-y-10 custom-scrollbar">
+                <div>
+                    <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-4">Preset Aesthetic Tiers</label>
+                    <div className="flex flex-col gap-3">
+                        {TEMPLATES.map(t => (
+                            <button 
+                                key={t.id}
+                                onClick={() => updateTheme({ preset: t.id, customCSS: t.css })}
+                                className={`p-4 border rounded-[12px] text-left transition-colors ${schema.theme.preset === t.id ? 'border-[var(--color-accent)] ring-1 ring-[#C17F3E20] bg-[#F4F3EF]' : 'border-[var(--color-border-warm)] hover:border-[#1C1B19]'}`}
+                            >
+                                <span className="text-[14px] font-medium text-[var(--color-text-primary)]">{t.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="pt-8 border-t border-[var(--color-border-warm)]">
+                    <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-2">Custom Raw CSS</label>
+                    <p className="text-[12px] text-[var(--color-text-tertiary)] mb-4 leading-relaxed">
+                        Override styling at the root layout block. Directly modifies `.card`, `.btn-primary`, and <code>:root</code> level variables.
+                    </p>
+                    <textarea 
+                        value={schema.theme.customCSS || ''}
+                        onChange={(e) => updateTheme({ preset: 'custom', customCSS: e.target.value })}
+                        className="w-full h-[320px] p-4 text-[12px] font-mono bg-[#F4F3EF] border border-[var(--color-border-warm)] rounded-[8px] focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] text-[var(--color-text-primary)] resize-vertical shadow-inner"
+                        placeholder="/* Inject rules... */"
+                    />
+                </div>
+            </div>
+        </aside>
+    );
+}
