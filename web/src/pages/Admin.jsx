@@ -1,21 +1,29 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useFormStore } from '../store/formStore';
-import { LogOut, Plus, Settings } from 'lucide-react';
+import { ExternalLink, LogOut, Plus, Settings } from 'lucide-react';
 
 export default function Admin() {
   const logout = useAuthStore(state => state.logout);
   const navigate = useNavigate();
-  const schema = useFormStore(state => state.schema); // We use the single schema from our store for now.
+  const forms = useFormStore(state => state.forms);
+  const createForm = useFormStore(state => state.createForm);
+  const selectForm = useFormStore(state => state.selectForm);
   
   const handleLogout = () => {
     logout();
     navigate('/');
   };
 
-  const forms = [
-      schema // In reality, fetch all form schemas. We only have the one in Zustand for demo.
-  ];
+  const handleCreateNewForm = () => {
+    const newFormId = createForm();
+    navigate(`/builder/${newFormId}`);
+  };
+
+  const handleOpenBuilder = (formId) => {
+    selectForm(formId);
+    navigate(`/builder/${formId}`);
+  };
 
   return (
     <div className="flex min-h-screen bg-surface text-on-surface">
@@ -45,7 +53,7 @@ export default function Admin() {
           </div>
           
           <button 
-            onClick={() => navigate('/builder/new')}
+            onClick={handleCreateNewForm}
             className="flex items-center gap-2 px-6 py-3 lit-gradient text-on-primary rounded-md font-medium shadow-lg hover:shadow-xl transition-all"
           >
             <Plus size={18} />
@@ -59,7 +67,7 @@ export default function Admin() {
                 {forms.map(form => (
                     <div 
                         key={form.id} 
-                        onClick={() => navigate(`/builder/${form.id}`)}
+                    onClick={() => handleOpenBuilder(form.id)}
                         className="group bg-surface-container hover:bg-surface-container-high transition-colors p-8 rounded-lg cursor-pointer ambient-shadow flex justify-between items-center"
                     >
                         <div>
@@ -69,6 +77,16 @@ export default function Admin() {
                             </p>
                         </div>
                         <div className="flex items-center gap-4 text-on-surface-variant">
+                          <button
+                            className="p-2 hover:bg-surface-container-highest rounded-full transition-colors"
+                            title="Open form"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.open(`/f/${form.id}`, '_blank');
+                            }}
+                          >
+                            <ExternalLink size={20} />
+                          </button>
                             <button className="p-2 hover:bg-surface-container-highest rounded-full transition-colors" onClick={(e) => { e.stopPropagation(); /* stub */ }}>
                                 <Settings size={20} />
                             </button>

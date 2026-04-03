@@ -1,8 +1,10 @@
 import { useAuthStore } from '../store/authStore';
+import { useFormStore } from '../store/formStore';
 import { useNavigate } from 'react-router-dom';
 
 export default function Home() {
   const loginAs = useAuthStore((state) => state.loginAs);
+  const forms = useFormStore((state) => state.forms);
   const navigate = useNavigate();
 
   const handleLogin = (role) => {
@@ -10,10 +12,12 @@ export default function Home() {
     if (role === 'admin') {
       navigate('/admin');
     } else {
-      /* In a real app we might redirect to a generic user dashboard, 
-         but for now we instruct them to view a specific form /f/:id */
-      // Using a hardcoded demo id /f/demo for the flow.
-      navigate('/f/demo');
+      const targetForm = forms[0];
+      if (targetForm) {
+        navigate(`/f/${targetForm.id}`);
+      } else {
+        navigate('/admin');
+      }
     }
   };
 

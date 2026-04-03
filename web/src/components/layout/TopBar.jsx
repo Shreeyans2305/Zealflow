@@ -9,6 +9,17 @@ export default function TopBar() {
   const updateTitle = useFormStore(state => state.updateTitle);
   const navigate = useNavigate();
 
+  const handlePreview = () => {
+    if (!schema?.id) return;
+
+    const previewUrl = `${window.location.origin}/f/${schema.id}`;
+    const opened = window.open(previewUrl, '_blank', 'noopener,noreferrer');
+
+    if (!opened) {
+      navigate(`/f/${schema.id}`);
+    }
+  };
+
   return (
     <header className="flex items-center justify-between h-14 px-4 bg-surface-container glass-panel ghost-border border-b shadow-sm flex-shrink-0 z-30 relative">
       <div className="flex items-center gap-4">
@@ -47,7 +58,7 @@ export default function TopBar() {
           <Share2 size={16} />
           Share
         </button>
-        <button onClick={() => window.open(`/f/${schema.id}`, '_blank')} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-on-surface-variant bg-transparent ghost-border border rounded hover:bg-surface-container-high transition-colors">
+        <button onClick={handlePreview} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-on-surface-variant bg-transparent ghost-border border rounded hover:bg-surface-container-high transition-colors">
           <Play size={16} />
           Preview
         </button>

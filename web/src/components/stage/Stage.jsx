@@ -1,15 +1,39 @@
 import { useState, useMemo } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import { useFormStore } from '../../store/formStore';
 import { evaluateFieldVisibility } from '../../utils/logicEngine';
 
 export default function Stage() {
-  const schema = useFormStore(state => state.schema);
+  const { id } = useParams();
+  const forms = useFormStore(state => state.forms);
+  const schema = useMemo(() => {
+    if (!id) return forms[0];
+    return forms.find((form) => form.id === id);
+  }, [forms, id]);
   const [answers, setAnswers] = useState({});
   const [isSubmitted, setIsSubmitted] = useState(false);
 
   const visibilityMap = useMemo(() => {
+    if (!schema) return {};
     return evaluateFieldVisibility(schema, answers);
   }, [schema, answers]);
+
+  if (!schema) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center p-6">
+        <div className="max-w-xl w-full bg-surface-container rounded-xl ambient-shadow p-10 text-center ghost-border border">
+          <h1 className="text-display-lg display-font text-on-surface mb-3">Form not found</h1>
+          <p className="text-on-surface-variant mb-8">This form link is invalid or the form has been removed.</p>
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center lit-gradient text-on-primary font-medium px-6 py-3 rounded-md"
+          >
+            Go to Home
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const visibleFields = schema.fields.filter(f => visibilityMap[f.id]);
 

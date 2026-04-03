@@ -2,8 +2,8 @@ import { create } from 'zustand';
 import { produce } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
 
-const initialSchema = {
-  id: "form_1",
+const createEmptySchema = (overrides = {}) => ({
+  id: `form_${uuidv4().slice(0, 8)}`,
   title: "Untitled form",
   version: 1,
   settings: {
@@ -19,69 +19,135 @@ const initialSchema = {
     customCSS: ""
   },
   fields: [],
-  logicRules: []
-};
+  logicRules: [],
+  ...overrides,
+});
 
-// Undo/Redo middleware implementation
-const withHistory = (config) => (set, get, api) => {
-  let history = [structuredClone(initialSchema)];
-  let pointer = 0;
-  const maxHistory = 100;
-
-  const setWithHistory = (fn) => {
-    set((currentState) => {
-      // Use Immer to produce the next schema
-      const nextSchema = produce(currentState.schema, fn);
-      
-      // If no change, return current state
-      if (nextSchema === currentState.schema) return currentState;
-
-      // Slice history to current pointer (discards redo stack)
-      history = history.slice(0, pointer + 1);
-      history.push(nextSchema);
-      
-      if (history.length > maxHistory) {
-        history.shift();
-      } else {
-        pointer++;
-      }
-
-      return { schema: nextSchema };
-    });
-  };
-
-  const undo = () => {
-    if (pointer > 0) {
-      pointer--;
-      set({ schema: history[pointer] });
-    }
-  };
-
-  const redo = () => {
-    if (pointer < history.length - 1) {
-      pointer++;
-      set({ schema: history[pointer] });
-    }
-  };
-
-  return config(setWithHistory, get, api, undo, redo);
-};
+const initialSchema = createEmptySchema({ id: 'form_1' });
+const maxHistory = 100;
 
 export const useFormStore = create(
-  withHistory((setSchema, get, api, undo, redo) => ({
+  (set, get) => ({
+    forms: [initialSchema],
+    currentFormId: initialSchema.id,
     schema: initialSchema,
+    history: [structuredClone(initialSchema)],
+    historyPointer: 0,
+
+    createForm: () => {
+      const newForm = createEmptySchema();
+      set((state) => ({
+        forms: [...state.forms, newForm],
+        currentFormId: newForm.id,
+        schema: newForm,
+        history: [structuredClone(newForm)],
+        historyPointer: 0,
+      }));
+      return newForm.id;
+    },
+
+    selectForm: (id) => {
+      const target = get().forms.find((form) => form.id === id);
+      if (!target) return false;
+
+      set({
+        currentFormId: target.id,
+        schema: target,
+        history: [structuredClone(target)],
+        historyPointer: 0,
+      });
+
+      return true;
+    },
+
+    deleteForm: (id) => {
+      set((state) => {
+        if (state.forms.length <= 1) return state;
+
+        const nextForms = state.forms.filter((form) => form.id !== id);
+        if (nextForms.length === state.forms.length) return state;
+
+        const nextCurrentId = state.currentFormId === id ? nextForms[0].id : state.currentFormId;
+        const nextSchema = nextForms.find((form) => form.id === nextCurrentId) || nextForms[0];
+
+        return {
+          forms: nextForms,
+          currentFormId: nextCurrentId,
+          schema: nextSchema,
+          history: [structuredClone(nextSchema)],
+          historyPointer: 0,
+        };
+      });
+    },
+
+    applyToCurrentSchema: (fn) => {
+      set((state) => {
+        const nextSchema = produce(state.schema, fn);
+        if (nextSchema === state.schema) return state;
+
+        const nextForms = state.forms.map((form) => (
+          form.id === state.currentFormId ? nextSchema : form
+        ));
+
+        const trimmedHistory = state.history.slice(0, state.historyPointer + 1);
+        trimmedHistory.push(structuredClone(nextSchema));
+
+        if (trimmedHistory.length > maxHistory) {
+          trimmedHistory.shift();
+        }
+
+        return {
+          forms: nextForms,
+          schema: nextSchema,
+          history: trimmedHistory,
+          historyPointer: Math.min(trimmedHistory.length - 1, maxHistory - 1),
+        };
+      });
+    },
     
     // History Actions
-    undo,
-    redo,
+    undo: () => {
+      set((state) => {
+        if (state.historyPointer <= 0) return state;
+
+        const nextPointer = state.historyPointer - 1;
+        const nextSchema = state.history[nextPointer];
+        const nextForms = state.forms.map((form) => (
+          form.id === state.currentFormId ? nextSchema : form
+        ));
+
+        return {
+          historyPointer: nextPointer,
+          schema: nextSchema,
+          forms: nextForms,
+        };
+      });
+    },
+    redo: () => {
+      set((state) => {
+        if (state.historyPointer >= state.history.length - 1) return state;
+
+        const nextPointer = state.historyPointer + 1;
+        const nextSchema = state.history[nextPointer];
+        const nextForms = state.forms.map((form) => (
+          form.id === state.currentFormId ? nextSchema : form
+        ));
+
+        return {
+          historyPointer: nextPointer,
+          schema: nextSchema,
+          forms: nextForms,
+        };
+      });
+    },
     
     // Form Metadata Actions
-    updateTitle: (title) => setSchema(draft => { draft.title = title }),
-    updateSettings: (settings) => setSchema(draft => { Object.assign(draft.settings, settings) }),
-    updateTheme: (theme) => setSchema(draft => { Object.assign(draft.theme, theme) }),
+    updateTitle: (title) => get().applyToCurrentSchema(draft => { draft.title = title }),
+    updateSettings: (settings) => get().applyToCurrentSchema(draft => { Object.assign(draft.settings, settings) }),
+    updateTheme: (theme) => get().applyToCurrentSchema(draft => { Object.assign(draft.theme, theme) }),
 
     // Field Actions
-    addField: (type) => setSchema(draft => {
+    addField: (type) => get().applyToCurrentSchema(draft => {
       const fieldId = `field_${uuidv4()}`;
       draft.fields.push({
         id: fieldId,
@@ -93,13 +159,13 @@ export const useFormStore = create(
         meta: { hidden: false, width: "full" }
       });
     }),
-    updateField: (id, updates) => setSchema(draft => {
+    updateField: (id, updates) => get().applyToCurrentSchema(draft => {
       const idx = draft.fields.findIndex(f => f.id === id);
       if (idx !== -1) {
         Object.assign(draft.fields[idx], updates);
       }
     }),
-    deleteField: (id) => setSchema(draft => {
+    deleteField: (id) => get().applyToCurrentSchema(draft => {
       draft.fields = draft.fields.filter(f => f.id !== id);
       // Automatically clean up logic rules referencing this field
       draft.logicRules = draft.logicRules.map(rule => {
@@ -107,7 +173,7 @@ export const useFormStore = create(
         return rule;
       }).filter(rule => rule.conditions.length > 0 && rule.action.targetFieldId !== id);
     }),
-    reorderFields: (activeId, overId) => setSchema(draft => {
+    reorderFields: (activeId, overId) => get().applyToCurrentSchema(draft => {
       const oldIndex = draft.fields.findIndex(f => f.id === activeId);
       const newIndex = draft.fields.findIndex(f => f.id === overId);
       if (oldIndex !== -1 && newIndex !== -1) {
@@ -117,17 +183,17 @@ export const useFormStore = create(
     }),
 
     // Logic Rules Actions
-    addLogicRule: (rule) => setSchema(draft => {
+    addLogicRule: (rule) => get().applyToCurrentSchema(draft => {
       draft.logicRules.push({ id: `rule_${uuidv4()}`, ...rule });
     }),
-    updateLogicRule: (id, updates) => setSchema(draft => {
+    updateLogicRule: (id, updates) => get().applyToCurrentSchema(draft => {
       const idx = draft.logicRules.findIndex(r => r.id === id);
       if (idx !== -1) {
         Object.assign(draft.logicRules[idx], updates);
       }
     }),
-    deleteLogicRule: (id) => setSchema(draft => {
+    deleteLogicRule: (id) => get().applyToCurrentSchema(draft => {
       draft.logicRules = draft.logicRules.filter(r => r.id !== id);
     }),
-  }))
+  })
 );

@@ -10,12 +10,6 @@ function AdminRoute({ children }) {
   return userRole === 'admin' ? children : <Navigate to="/" replace />;
 }
 
-function UserRoute({ children }) {
-  const userRole = useAuthStore(state => state.userRole);
-  // Allow if role is either user or admin (since admin can also fill forms)
-  return userRole ? children : <Navigate to="/" replace />;
-}
-
 function App() {
   return (
     <Router>
@@ -39,11 +33,7 @@ function App() {
         />
         <Route 
           path="/f/:id" 
-          element={
-            <UserRoute>
-              <Stage />
-            </UserRoute>
-          } 
+          element={<Stage />} 
         />
         {/* Legacy redirect for vault to admin */}
         <Route path="/vault/:id" element={<Navigate to="/admin" replace />} />
