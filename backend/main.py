@@ -48,7 +48,7 @@ def submit_response(form_id: str, submission: schemas.SubmissionCreate, db: Sess
     if db_form is None:
         raise HTTPException(status_code=404, detail="Form not found")
         
-    if db_form.expires_at and datetime.datetime.utcnow() > db_form.expires_at:
+    if db_form.expires_at and datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) > db_form.expires_at:
         raise HTTPException(status_code=403, detail="Form window has strictly expired. Rejection active.")
     
     db_response = models.Response(form_id=form_id, answers=submission.answers)

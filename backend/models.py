@@ -8,7 +8,7 @@ class Form(Base):
     id = Column(String, primary_key=True, index=True, default=lambda: f"form_{uuid.uuid4().hex[:12]}")
     title = Column(String, index=True)
     schema_data = Column(JSON)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
     expires_at = Column(DateTime, nullable=True)
 
 class Response(Base):
@@ -16,4 +16,4 @@ class Response(Base):
     id = Column(String, primary_key=True, index=True, default=lambda: f"resp_{uuid.uuid4().hex[:12]}")
     form_id = Column(String, ForeignKey("forms.id"))
     answers = Column(JSON)
-    submitted_at = Column(DateTime, default=datetime.datetime.utcnow)
+    submitted_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))

@@ -54,7 +54,7 @@ def main():
                 payload = {"title": schema.get("title", "Headless Import"), "schema_data": schema}
                 
                 if args.expires_minutes > 0:
-                    delta = datetime.datetime.utcnow() + datetime.timedelta(minutes=args.expires_minutes)
+                    delta = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=args.expires_minutes)
                     payload["expires_at"] = delta.isoformat()
                 
                 res = requests.post(f"{api_url}/forms", json=payload)
