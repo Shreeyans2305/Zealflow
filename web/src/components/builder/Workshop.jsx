@@ -11,6 +11,7 @@ import { useUIStore } from '../../store/uiStore';
 import { useCollaboration } from '../../hooks/useCollaboration';
 import { CollaboratorCursors } from '../collaboration/CollaboratorCursors';
 import { useAuthStore } from '../../store/authStore';
+import AIGeneratePanel from './AIGeneratePanel';
 
 export default function Workshop() {
   const { id } = useParams();
@@ -156,6 +157,8 @@ export default function Workshop() {
         {currentTab === 'builder' && <ConfigPanel />}
         {currentTab === 'logic' && <LogicPanel />}
         {currentTab === 'design' && <DesignPanel />}
+
+        <AIGeneratePanel />
       </div>
     </div>
   );

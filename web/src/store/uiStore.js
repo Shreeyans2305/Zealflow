@@ -5,8 +5,11 @@ export const useUIStore = create((set) => ({
   selectedFieldId: null,
   isConfigPanelOpen: false,
   currentPageId: null,
+  isAIPanelOpen: false,
 
   setTab: (tab) => set({ currentTab: tab }),
+  setAIPanel: (open) => set({ isAIPanelOpen: open }),
+  toggleAIPanel: () => set((state) => ({ isAIPanelOpen: !state.isAIPanelOpen })),
   selectField: (id) => set({ selectedFieldId: id, isConfigPanelOpen: true }),
   deselectField: () => set({ selectedFieldId: null, isConfigPanelOpen: false }),
   setCurrentPage: (pageId) => set({ currentPageId: pageId }),

@@ -78,6 +78,7 @@ function buildForwardPath(schema, answers, pages, startPageId) {
 
 export default function Stage() {
   const { id } = useParams();
+
   const [schema, setSchema] = useState(null);
   const [loadState, setLoadState] = useState('loading'); // 'loading' | 'ready' | 'error'
   const [answers, setAnswers] = useState({});

@@ -1,6 +1,6 @@
 import { useFormStore } from '../../store/formStore';
 import { useUIStore } from '../../store/uiStore';
-import { Share2, Play, Users, ArrowLeft, CheckCircle2, Copy, Trash2 } from 'lucide-react';
+import { Share2, Play, Users, ArrowLeft, CheckCircle2, Copy, Trash2, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { api } from '../../utils/apiClient';
@@ -15,6 +15,8 @@ export default function TopBar() {
   const applyToCurrentSchema = useFormStore(state => state.applyToCurrentSchema);
   const currentTab = useUIStore(state => state.currentTab);
   const setTab = useUIStore(state => state.setTab);
+  const toggleAIPanel = useUIStore(state => state.toggleAIPanel);
+  const isAIPanelOpen = useUIStore(state => state.isAIPanelOpen);
   const undo = useFormStore(state => state.undo);
   const redo = useFormStore(state => state.redo);
   const updateTitle = useFormStore(state => state.updateTitle);
@@ -140,6 +142,13 @@ export default function TopBar() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
+            <button 
+              onClick={toggleAIPanel}
+              className={`btn-secondary py-[6px] px-[12px] text-[13px] flex items-center gap-2 transition-all ${isAIPanelOpen ? 'bg-[var(--color-bg-hover)] border-[var(--color-accent)] text-[var(--color-accent)]' : ''}`}
+            >
+              <Sparkles size={14} className={isAIPanelOpen ? 'text-[var(--color-accent)]' : ''} />
+              AI Generate
+            </button>
             <button 
               onClick={handleShare}
               className="btn-secondary py-[6px] px-[12px] text-[13px] flex items-center gap-2"
