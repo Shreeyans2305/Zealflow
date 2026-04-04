@@ -12,13 +12,14 @@ SMTP_USER = os.getenv("SMTP_USER", "").strip()
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
 SMTP_FROM = os.getenv("SMTP_FROM", "Zealflow <noreply@example.com>").strip()
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+VERIFICATION_BASE_URL = os.getenv("VERIFICATION_BASE_URL", FRONTEND_URL)
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
 SMTP_TIMEOUT_SECONDS = int(os.getenv("SMTP_TIMEOUT_SECONDS", "15"))
 
 
 def build_verification_url(token: str) -> str:
-    return f"{FRONTEND_URL}/verify?token={token}"
+    return f"{VERIFICATION_BASE_URL.rstrip('/')}/verify?token={token}"
 
 
 def _envelope_from() -> str:
