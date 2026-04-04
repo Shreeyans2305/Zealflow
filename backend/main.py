@@ -14,14 +14,25 @@ from routers import auth, collaboration_ws, forms, responses, ai
 app = FastAPI(title="Zealflow API", version="1.0.0")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URLS = os.getenv("FRONTEND_URLS", "")
+FRONTEND_ORIGIN_REGEX = os.getenv("FRONTEND_ORIGIN_REGEX", r"https://.*\.vercel\.app")
+
+allow_origins = [
+    FRONTEND_URL,
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+if FRONTEND_URLS.strip():
+    allow_origins.extend([u.strip() for u in FRONTEND_URLS.split(",") if u.strip()])
+
+# de-duplicate while preserving order
+allow_origins = list(dict.fromkeys(allow_origins))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        FRONTEND_URL,
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=allow_origins,
+    allow_origin_regex=FRONTEND_ORIGIN_REGEX or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -49,3 +60,8 @@ app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 @app.get("/")
 def root():
     return {"status": "ok", "service": "Zealflow API"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "healthy", "service": "Zealflow API"}
