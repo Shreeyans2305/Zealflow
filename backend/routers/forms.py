@@ -4,7 +4,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from postgrest.exceptions import APIError
 
 from models.forms import FormCreate, FormUpdate, FormShareRequest, FormJoinRequest, FormCollaboratorResponse
@@ -15,6 +15,25 @@ from services.supabase_client import get_supabase
 
 router = APIRouter()
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+
+def _send_publish_batch_safe(
+    recipients: list[str],
+    form_title: str,
+    form_url: str,
+    message: str,
+    admin_name: str | None,
+) -> None:
+    try:
+        send_bulk_form_publish_emails(
+            recipients,
+            form_title=form_title,
+            form_url=form_url,
+            custom_message=message,
+            admin_name=admin_name,
+        )
+    except Exception as e:
+        print(f"[Zealflow] Publish email batch failed: {e}")
 
 
 def _slugify(text: str) -> str:
@@ -329,7 +348,11 @@ def get_collaborators(
 
 
 @router.patch("/{form_id}/publish")
-def toggle_publish(form_id: str, current_admin: dict = Depends(get_current_admin)):
+def toggle_publish(
+    form_id: str,
+    background_tasks: BackgroundTasks,
+    current_admin: dict = Depends(get_current_admin),
+):
     sb = get_supabase()
 
     existing = (
@@ -376,6 +399,7 @@ def toggle_publish(form_id: str, current_admin: dict = Depends(get_current_admin
     email_result = {
         "mailing_list_count": 0,
         "mailing_list_sent": 0,
+        "mailing_list_queued": 0,
     }
 
     if new_state:
@@ -383,22 +407,20 @@ def toggle_publish(form_id: str, current_admin: dict = Depends(get_current_admin
         message = (settings.get("publishEmailMessage") or "").strip()
         form_url = f"{FRONTEND_URL}/f/{form_id}"
         form_title = updated_row.get("title") or schema_result.data.get("title") or "Untitled form"
-        sent_count = 0
         if recipients:
-            try:
-                sent_count = send_bulk_form_publish_emails(
-                    recipients,
-                    form_title=form_title,
-                    form_url=form_url,
-                    custom_message=message,
-                    admin_name=current_admin.get("username"),
-                )
-            except Exception as e:
-                print(f"[Zealflow] Publish email batch failed: {e}")
+            background_tasks.add_task(
+                _send_publish_batch_safe,
+                recipients,
+                form_title,
+                form_url,
+                message,
+                current_admin.get("username"),
+            )
 
         email_result = {
             "mailing_list_count": len(recipients),
-            "mailing_list_sent": sent_count,
+            "mailing_list_sent": 0,
+            "mailing_list_queued": len(recipients),
         }
 
     response_schema = updated_row.get("schema") or schema

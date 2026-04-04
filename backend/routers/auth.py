@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 
 from models.auth import AdminOut, LoginRequest, ResendVerificationRequest, SignupRequest
 from services.auth_service import (
@@ -17,6 +17,19 @@ from services.supabase_client import get_supabase
 
 router = APIRouter()
 ALLOW_DEV_VERIFY_FALLBACK = os.getenv("ALLOW_DEV_VERIFY_FALLBACK", "true").lower() == "true"
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
+
+
+def _is_smtp_configured() -> bool:
+    return bool(SMTP_USER and SMTP_PASSWORD)
+
+
+def _send_verification_email_safe(to_email: str, username: str, token: str) -> None:
+    try:
+        send_verification_email(to_email, username, token)
+    except Exception as e:
+        print(f"[Zealflow] Verification email background send failed for {to_email}: {e}")
 
 
 def _build_admin_summary(sb, admin_id: str, admin_created_at: str | None) -> dict:
@@ -116,7 +129,7 @@ def get_current_admin(authorization: Optional[str] = Header(None)) -> dict:
 
 
 @router.post("/signup")
-def signup(body: SignupRequest):
+def signup(body: SignupRequest, background_tasks: BackgroundTasks):
     sb = get_supabase()
 
     # Check for existing username
@@ -145,26 +158,23 @@ def signup(body: SignupRequest):
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create account")
 
-    try:
-        send_verification_email(body.email, body.username, verify_token)
-        return {
-            "message": "Account created. Check your email to verify before logging in.",
-            "email_sent": True,
-        }
-    except Exception as e:
-        print(f"[Zealflow] Verification email failed: {e}")
-
+    if not _is_smtp_configured():
         if ALLOW_DEV_VERIFY_FALLBACK:
             return {
-                "message": "Account created, but email delivery failed. Use the verification link below.",
+                "message": "Account created. SMTP is not configured, use the verification link below.",
                 "email_sent": False,
                 "verification_url": build_verification_url(verify_token),
             }
-
         return {
-            "message": "Account created, but verification email could not be delivered. Use resend verification.",
+            "message": "Account created, but verification email is not configured. Use resend verification after SMTP setup.",
             "email_sent": False,
         }
+
+    background_tasks.add_task(_send_verification_email_safe, body.email, body.username, verify_token)
+    return {
+        "message": "Account created. Verification email queued.",
+        "email_sent": True,
+    }
 
 
 @router.get("/verify")
@@ -183,7 +193,7 @@ def verify_email(token: str):
 
 
 @router.post("/resend-verification")
-def resend_verification(body: ResendVerificationRequest):
+def resend_verification(body: ResendVerificationRequest, background_tasks: BackgroundTasks):
     sb = get_supabase()
     result = sb.table("admins").select("id, username, is_verified").eq("email", body.email).maybe_single().execute()
 
@@ -197,20 +207,17 @@ def resend_verification(body: ResendVerificationRequest):
     verify_token = generate_verify_token()
     sb.table("admins").update({"verify_token": verify_token}).eq("id", admin["id"]).execute()
 
-    try:
-        send_verification_email(body.email, admin["username"], verify_token)
-        return {"message": "Verification email sent.", "email_sent": True}
-    except Exception as e:
-        print(f"[Zealflow] Resend verification email failed: {e}")
-
+    if not _is_smtp_configured():
         if ALLOW_DEV_VERIFY_FALLBACK:
             return {
-                "message": "Email delivery failed. Use the verification link below.",
+                "message": "SMTP is not configured. Use the verification link below.",
                 "email_sent": False,
                 "verification_url": build_verification_url(verify_token),
             }
+        raise HTTPException(status_code=500, detail="SMTP is not configured")
 
-        raise HTTPException(status_code=500, detail="Failed to send verification email")
+    background_tasks.add_task(_send_verification_email_safe, body.email, admin["username"], verify_token)
+    return {"message": "Verification email queued.", "email_sent": True}
 
 
 @router.post("/login")
