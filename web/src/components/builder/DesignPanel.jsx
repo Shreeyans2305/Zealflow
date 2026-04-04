@@ -35,8 +35,9 @@ export default function DesignPanel() {
     }, [schema.id, schema.settings.mailingListEmails, schema.settings.publishEmailMessage]);
 
     return (
-        <aside className="absolute right-0 top-0 bottom-0 w-[400px] bg-[#FFFFFF] border-l border-[var(--color-border-warm)] shadow-2xl transition-transform duration-200 ease-out z-50 flex flex-col translate-x-0">
-            <div className="flex items-center justify-between p-8 border-b border-[var(--color-border-warm)] bg-[#FAFAF8]">
+        <aside className="absolute right-0 top-0 bottom-0 w-[400px] bg-[var(--color-bg-surface)] border-l border-[var(--color-border-warm)] shadow-2xl transition-transform duration-200 ease-out z-50 flex flex-col translate-x-0 overflow-hidden">
+            <div className="absolute -top-14 -left-8 w-40 h-40 rounded-full bg-[var(--color-accent-soft)] blur-3xl pointer-events-none opacity-70" />
+            <div className="flex items-center justify-between p-8 border-b border-[var(--color-border-warm)] bg-white/55 backdrop-blur-sm relative z-10">
                 <div>
                     <h2 className="label-upper text-[var(--color-text-primary)]">Design Engine</h2>
                     <p className="text-[12px] text-[var(--color-text-secondary)] mt-1">Configure layout visuals.</p>
@@ -46,7 +47,7 @@ export default function DesignPanel() {
                 </button>
             </div>
             
-            <div className="p-8 overflow-y-auto flex-1 space-y-10 custom-scrollbar">
+            <div className="p-8 overflow-y-auto flex-1 space-y-10 custom-scrollbar relative z-10">
                 <div>
                     <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-4">Preset Aesthetic Tiers</label>
                     <div className="flex flex-col gap-3">
@@ -54,7 +55,7 @@ export default function DesignPanel() {
                             <button 
                                 key={t.id}
                                 onClick={() => updateTheme({ preset: t.id, customCSS: t.css })}
-                                className={`p-4 border rounded-[12px] text-left transition-colors ${schema.theme.preset === t.id ? 'border-[var(--color-accent)] ring-1 ring-[#C17F3E20] bg-[#F4F3EF]' : 'border-[var(--color-border-warm)] hover:border-[#1C1B19]'}`}
+                                className={`p-4 border rounded-[16px] text-left transition-all shadow-sm ${schema.theme.preset === t.id ? 'border-[var(--color-accent)] ring-1 ring-[#C17F3E20] bg-white' : 'border-[var(--color-border-warm)] bg-white/80 hover:border-[#1C1B19]'}`}
                             >
                                 <span className="text-[14px] font-medium text-[var(--color-text-primary)]">{t.label}</span>
                             </button>
@@ -70,7 +71,7 @@ export default function DesignPanel() {
                     <textarea 
                         value={schema.theme.customCSS || ''}
                         onChange={(e) => updateTheme({ preset: 'custom', customCSS: e.target.value })}
-                        className="w-full h-[320px] p-4 text-[12px] font-mono bg-[#F4F3EF] border border-[var(--color-border-warm)] rounded-[8px] focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] text-[var(--color-text-primary)] resize-vertical shadow-inner"
+                        className="w-full h-[320px] p-4 text-[12px] font-mono bg-white/80 border border-[var(--color-border-warm)] rounded-[16px] focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] text-[var(--color-text-primary)] resize-vertical shadow-inner"
                         placeholder="/* Inject rules... */"
                     />
                 </div>

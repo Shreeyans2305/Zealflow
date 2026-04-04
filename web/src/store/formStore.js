@@ -289,8 +289,13 @@ export const useFormStore = create((set, get) => ({
 
   // ---- Form management ----
 
-  createForm: () => {
-    const newForm = createEmptySchema();
+  createForm: (templateSchema = null) => {
+    const nextId = `form_${uuidv4().slice(0, 8)}`;
+    const newForm = ensureSchemaDefaults(
+      templateSchema
+        ? { ...structuredClone(templateSchema), id: nextId }
+        : createEmptySchema({ id: nextId })
+    );
     // Update local state immediately for instant navigation
     set((state) => ({
       forms: [{ ...newForm, field_count: 0 }, ...state.forms],

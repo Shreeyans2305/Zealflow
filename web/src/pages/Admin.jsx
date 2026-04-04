@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useFormStore } from '../store/formStore';
-import { ExternalLink, Plus, BarChart2 } from 'lucide-react';
+import { ExternalLink, Plus, BarChart2, X } from 'lucide-react';
 import AdminSidebar from '../components/layout/AdminSidebar';
+import { FORM_TEMPLATES, createTemplateSchema } from '../utils/formTemplates';
 
 export default function Admin() {
   const logout = useAuthStore((s) => s.logout);
@@ -11,6 +13,7 @@ export default function Admin() {
   const createForm = useFormStore((s) => s.createForm);
   const selectForm = useFormStore((s) => s.selectForm);
   const isInitialized = useFormStore((s) => s.isInitialized);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -18,7 +21,13 @@ export default function Admin() {
   };
 
   const handleCreateNewForm = () => {
-    const newFormId = createForm();
+    setShowTemplatePicker(true);
+  };
+
+  const handleCreateFromTemplate = (templateId) => {
+    const templateSchema = templateId === 'scratch' ? null : createTemplateSchema(templateId);
+    const newFormId = createForm(templateSchema);
+    setShowTemplatePicker(false);
     navigate(`/builder/${newFormId}`);
   };
 
@@ -125,6 +134,47 @@ export default function Admin() {
           )}
         </div>
       </main>
+
+      {showTemplatePicker && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="bg-[var(--color-bg-surface)] w-full max-w-[960px] rounded-3xl border border-[var(--color-border-warm)] shadow-[0_28px_80px_rgba(0,0,0,0.18)] overflow-hidden">
+            <div className="flex items-center justify-between px-8 py-6 border-b border-[var(--color-border-warm)] bg-[color-mix(in_srgb,var(--color-bg-surface)_86%,#fff_14%)]">
+              <div>
+                <h2 className="text-[32px] leading-none display-font text-[var(--color-text-primary)]">Create a new form</h2>
+                <p className="text-[14px] text-[var(--color-text-secondary)] mt-2">Start clean or pick a polished starter template.</p>
+              </div>
+              <button
+                onClick={() => setShowTemplatePicker(false)}
+                className="p-2 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)]"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="relative p-8 grid grid-cols-1 md:grid-cols-2 gap-5 bg-[var(--color-bg-base)] overflow-hidden">
+              <div className="pointer-events-none absolute -right-16 -bottom-16 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(79,109,255,0.14),rgba(79,109,255,0)_72%)]" />
+              {FORM_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => handleCreateFromTemplate(template.id)}
+                  className={`text-left p-5 rounded-2xl border border-[var(--color-border-warm)] bg-gradient-to-br ${template.gradient} hover:shadow-[0_18px_38px_rgba(0,0,0,0.12)] hover:-translate-y-[2px] transition-all relative overflow-hidden`}
+                >
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <h3 className="text-[24px] leading-tight display-font text-[var(--color-text-primary)]">{template.name}</h3>
+                    <span className="text-[11px] font-semibold tracking-[0.02em] px-2.5 py-1 rounded-full bg-black/10 text-[var(--color-text-primary)] backdrop-blur">
+                      {template.badge}
+                    </span>
+                  </div>
+                  <p className="text-[14px] leading-relaxed text-[var(--color-text-secondary)] max-w-[92%]">{template.description}</p>
+                  <div className="mt-6 inline-flex items-center gap-2 text-[12px] font-medium text-[var(--color-text-primary)] bg-black/10 rounded-full px-3.5 py-2 backdrop-blur">
+                    Use this template
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

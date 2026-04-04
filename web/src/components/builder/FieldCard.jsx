@@ -26,14 +26,14 @@ export default function FieldCard({ field, isOverlay }) {
       data-page-field="true"
       data-field-id={field.id}
       onClick={() => selectField(field.id)}
-      className={`group relative flex items-start bg-[#FFFFFF] border rounded-[12px] p-6 w-full cursor-pointer transition-all duration-150 ease-out ${
+      className={`zealflow-field-card group relative flex items-start border rounded-[12px] p-6 w-full cursor-pointer transition-all duration-150 ease-out ${
         isSelected ? 'border-[var(--color-accent)] ring-2 ring-[var(--color-accent-soft)]' : 'border-[var(--color-border-warm)] hover:shadow-[0_2px_12px_rgba(0,0,0,0.06)]'
       } ${isOverlay ? 'shadow-xl scale-[1.02]' : ''}`}
     >
       <div 
         {...attributes} 
         {...listeners}
-        className="absolute left-[-16px] top-1/2 -translate-y-1/2 p-2 text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity bg-[#FFFFFF] border border-[var(--color-border-warm)] shadow-sm rounded-full"
+        className="absolute left-[-16px] top-1/2 -translate-y-1/2 p-2 text-[var(--color-text-tertiary)] opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity bg-[var(--color-bg-surface)] border border-[var(--color-border-warm)] shadow-sm rounded-full"
       >
         <GripVertical size={14} />
       </div>

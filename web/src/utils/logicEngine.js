@@ -72,6 +72,8 @@ export function resolveNextPageId(schema, answers, currentPageId) {
   const rules = Array.isArray(schema?.logicRules) ? schema.logicRules : [];
   for (const rule of rules) {
     if (rule?.action?.type !== 'jump_to_page') continue;
+    const sourcePageId = rule?.action?.sourcePageId;
+    if (sourcePageId && sourcePageId !== currentPageId) continue;
     const targetPageId = rule?.action?.targetPageId;
     if (!targetPageId || targetPageId === currentPageId) continue;
     if (evaluateRuleConditions(rule, answers)) {

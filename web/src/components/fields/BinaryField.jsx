@@ -10,7 +10,7 @@ export function BinaryStage({ field, value, onChange }) {
         className={`flex-1 h-[48px] rounded-[8px] font-medium transition-colors duration-120 ease-out focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] ${
           value === leftLabel 
             ? 'border-[var(--color-text-primary)] bg-[var(--color-text-primary)] text-[#FFFFFF]' 
-            : 'border-[var(--color-border-warm)] bg-[var(--color-bg-base)] text-[var(--color-text-secondary)] border hover:bg-[#FFFFFF]'
+            : 'border-[var(--color-border-warm)] bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)] border hover:bg-[var(--color-bg-hover)]'
         }`}
       >
         {leftLabel}
@@ -22,7 +22,7 @@ export function BinaryStage({ field, value, onChange }) {
         className={`flex-1 h-[48px] rounded-[8px] font-medium transition-colors duration-120 ease-out focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] ${
           value === rightLabel 
             ? 'border-[var(--color-text-primary)] bg-[var(--color-text-primary)] text-[#FFFFFF]' 
-            : 'border-[var(--color-border-warm)] bg-[var(--color-bg-base)] text-[var(--color-text-secondary)] border hover:bg-[#FFFFFF]'
+            : 'border-[var(--color-border-warm)] bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)] border hover:bg-[var(--color-bg-hover)]'
         }`}
       >
         {rightLabel}

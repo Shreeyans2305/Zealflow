@@ -14,7 +14,7 @@ export function MultipleChoiceStage({ field, value, onChange }) {
             className={`w-full text-left px-4 py-3 rounded-[8px] flex items-center gap-3 transition-colors duration-150 ease-out border ${
               isSelected 
                 ? 'border-[var(--color-text-primary)] bg-[var(--color-bg-base)]' 
-                : 'border-[var(--color-border-warm)] bg-[#FFFFFF] hover:bg-[var(--color-bg-base)]'
+                : 'border-[var(--color-border-warm)] bg-[var(--color-bg-surface)] hover:bg-[var(--color-bg-hover)]'
             }`}
           >
             {/* Custom Radio Button */}

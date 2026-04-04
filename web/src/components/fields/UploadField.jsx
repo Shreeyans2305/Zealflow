@@ -95,7 +95,7 @@ export function UploadStage({ field, value, onChange }) {
     return (
       <div className="space-y-2">
       <div className="flex items-center gap-3 p-4 border border-[var(--color-border-warm)] rounded-[8px] bg-[var(--color-bg-base)]">
-        <div className="w-10 h-10 bg-[#FFFFFF] rounded border border-[var(--color-border-warm)] flex items-center justify-center text-[var(--color-text-secondary)]">
+        <div className="w-10 h-10 bg-[var(--color-bg-surface)] rounded border border-[var(--color-border-warm)] flex items-center justify-center text-[var(--color-text-secondary)]">
           <File size={20} strokeWidth={1.5} />
         </div>
         <div className="flex-1 min-w-0">
@@ -121,7 +121,7 @@ export function UploadStage({ field, value, onChange }) {
       className={`relative w-full border-2 border-dashed rounded-[12px] p-8 text-center cursor-pointer transition-colors duration-150 ease-out ${
         isDragging 
           ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)]' 
-          : 'border-[var(--color-border-warm)] bg-[#FFFFFF] hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]'
+          : 'border-[var(--color-border-warm)] bg-[var(--color-bg-surface)] hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]'
       }`}
       onDragEnter={handleDrag}
       onDragLeave={handleDrag}

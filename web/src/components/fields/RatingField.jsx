@@ -43,7 +43,7 @@ export function RatingStage({ field, value, onChange }) {
             className={`w-12 h-12 rounded-full border flex items-center justify-center font-medium transition-all duration-150 ease-out focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] ${
               isSelected 
                 ? 'bg-[var(--color-text-primary)] border-[var(--color-text-primary)] text-white' 
-                : 'bg-[#FFFFFF] border-[var(--color-border-warm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'
+                : 'bg-[var(--color-bg-surface)] border-[var(--color-border-warm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'
             }`}
           >
             {ratingValue}

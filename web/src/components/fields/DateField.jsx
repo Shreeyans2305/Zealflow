@@ -62,7 +62,7 @@ export function DateStage({ field, value, onChange }) {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full h-[48px] px-4 flex items-center justify-between border border-[var(--color-border-warm)] bg-[#FFFFFF] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] transition-colors"
+        className="w-full h-[48px] px-4 flex items-center justify-between border border-[var(--color-border-warm)] bg-[var(--color-bg-surface)] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] transition-colors"
       >
         <span className={value ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-tertiary)]'}>
           {value ? new Date(value).toLocaleDateString() : (field.placeholder || "Select a date")}
@@ -71,7 +71,7 @@ export function DateStage({ field, value, onChange }) {
       </button>
 
       {isOpen && (
-        <div className="absolute top-[56px] left-0 z-50 p-4 bg-[#FFFFFF] rounded-[12px] shadow-[0_12px_24px_rgba(0,0,0,0.1)] border border-[var(--color-border-warm)] w-[320px] origin-top transition-transform duration-150 ease-out">
+        <div className="absolute top-[56px] left-0 z-50 p-4 bg-[var(--color-bg-surface)] rounded-[12px] shadow-[0_12px_24px_rgba(0,0,0,0.1)] border border-[var(--color-border-warm)] w-[320px] origin-top transition-transform duration-150 ease-out">
           <div className="flex justify-between items-center mb-4">
             <button type="button" onClick={prevMonth} className="p-1 hover:bg-[var(--color-bg-hover)] rounded transition-colors"><ChevronLeft size={16} /></button>
             <span className="font-medium text-[15px] text-[var(--color-text-primary)]">

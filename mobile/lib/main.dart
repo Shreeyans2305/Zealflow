@@ -407,7 +407,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              _isLogin ? 'Access your forms, registry, and responses.' : 'Set up your account to start building forms.',
+                              _isLogin ? 'Submit forms and view analytics for forms you own.' : 'Create an admin account to view your form analytics.',
                               textAlign: TextAlign.center,
                               style: const TextStyle(fontSize: 14, color: _textSecondary),
                             ),
@@ -560,28 +560,8 @@ class _RegistryScreenState extends State<RegistryScreen> {
   bool _busy = false;
   int _tab = 0;
   Map<String, dynamic>? _profileSummary;
-
-  Future<void> _createAndOpenForm() async {
-    final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() => _busy = true);
-    try {
-      final id = await widget.controller.createForm();
-      if (!mounted) return;
-      navigator.push(
-        MaterialPageRoute(
-          builder: (_) => FormRunnerScreen(api: widget.controller.api, formId: id),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
+  Map<String, FormAnalyticsSnapshot> _analyticsByForm = {};
+  final TextEditingController _submitFormId = TextEditingController();
 
   Future<void> _loadProfile() async {
     final data = await widget.controller.api.get('/api/auth/profile-summary');
@@ -589,10 +569,55 @@ class _RegistryScreenState extends State<RegistryScreen> {
     setState(() => _profileSummary = data as Map<String, dynamic>);
   }
 
+  Future<void> _loadFormAnalytics() async {
+    final snapshots = <String, FormAnalyticsSnapshot>{};
+    final ownedForms = widget.controller.forms.where((f) => f.isOwner).toList();
+
+    for (final form in ownedForms) {
+      try {
+        final raw = await widget.controller.api.get('/api/forms/${form.id}/responses');
+        final payload = (raw as Map).cast<String, dynamic>();
+        snapshots[form.id] = FormAnalyticsSnapshot.fromResponsesPayload(payload);
+      } catch (_) {
+        snapshots[form.id] = const FormAnalyticsSnapshot(responseCount: 0, lastResponseAt: null);
+      }
+    }
+
+    if (!mounted) return;
+    setState(() => _analyticsByForm = snapshots);
+  }
+
+  Future<void> _refreshDashboard() async {
+    setState(() => _busy = true);
+    try {
+      await widget.controller.refreshForms();
+      await _loadProfile();
+      await _loadFormAnalytics();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _openFormById(String formId) {
+    final id = formId.trim();
+    if (id.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FormRunnerScreen(api: widget.controller.api, formId: id),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
-    _loadProfile();
+    _refreshDashboard();
+  }
+
+  @override
+  void dispose() {
+    _submitFormId.dispose();
+    super.dispose();
   }
 
   @override
@@ -615,16 +640,16 @@ class _RegistryScreenState extends State<RegistryScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                _tab == 0 ? 'Registry' : _tab == 1 ? 'Profile' : 'Settings',
+                                _tab == 0 ? 'Analytics' : _tab == 1 ? 'Submit' : 'Settings',
                                 style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: _textPrimary),
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 _tab == 0
-                                    ? 'Form blueprints and configurations.'
+                                    ? 'Performance snapshot for forms you own.'
                                     : _tab == 1
-                                        ? 'Your workspace activity summary.'
-                                        : 'Appearance and mobile access details.',
+                                        ? 'Open and submit a form by ID.'
+                                        : 'Mobile access details.',
                                 style: const TextStyle(fontSize: 13.5, color: _textSecondary),
                               ),
                             ],
@@ -633,30 +658,13 @@ class _RegistryScreenState extends State<RegistryScreen> {
                         IconButton(
                           onPressed: _busy
                               ? null
-                              : () async {
-                                  setState(() => _busy = true);
-                                  try {
-                                    await widget.controller.refreshForms();
-                                    await _loadProfile();
-                                  } finally {
-                                    if (mounted) setState(() => _busy = false);
-                                  }
-                                },
+                              : _refreshDashboard,
                           icon: const Icon(Icons.refresh),
                         ),
                         IconButton(
                           onPressed: () => widget.controller.logout(),
                           icon: const Icon(Icons.logout),
                         ),
-                        if (_tab == 0)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6),
-                            child: FilledButton.icon(
-                              onPressed: _busy ? null : _createAndOpenForm,
-                              icon: const Icon(Icons.add, size: 18),
-                              label: const Text('New Form'),
-                            ),
-                          ),
                       ],
                     ),
                   ),
@@ -664,12 +672,17 @@ class _RegistryScreenState extends State<RegistryScreen> {
               ),
               Expanded(
                 child: _tab == 0
-                    ? _RegistryTab(
+                    ? _AnalyticsTab(
                         controller: widget.controller,
-                        onCreateNewForm: _busy ? null : _createAndOpenForm,
+                        summary: _profileSummary,
+                        analyticsByForm: _analyticsByForm,
+                        onOpenForm: _openFormById,
                       )
                     : _tab == 1
-                        ? _ProfileTab(summary: _profileSummary)
+                        ? _SubmitTab(
+                            formIdController: _submitFormId,
+                            onOpenForm: _openFormById,
+                          )
                         : _SettingsTab(controller: widget.controller),
               ),
             ],
@@ -680,116 +693,37 @@ class _RegistryScreenState extends State<RegistryScreen> {
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Registry'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profile'),
+          NavigationDestination(icon: Icon(Icons.bar_chart_outlined), selectedIcon: Icon(Icons.bar_chart), label: 'Analytics'),
+          NavigationDestination(icon: Icon(Icons.send_outlined), selectedIcon: Icon(Icons.send), label: 'Submit'),
           NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),
-      floatingActionButton: _tab == 0
-          ? FloatingActionButton.extended(
-              onPressed: _busy ? null : _createAndOpenForm,
-              icon: const Icon(Icons.add),
-              label: const Text('New Form'),
-            )
-          : null,
     );
   }
 }
 
-class _RegistryTab extends StatelessWidget {
-  const _RegistryTab({required this.controller, required this.onCreateNewForm});
+class _AnalyticsTab extends StatelessWidget {
+  const _AnalyticsTab({
+    required this.controller,
+    required this.summary,
+    required this.analyticsByForm,
+    required this.onOpenForm,
+  });
 
   final AppController controller;
-  final Future<void> Function()? onCreateNewForm;
-
-  @override
-  Widget build(BuildContext context) {
-    if (controller.forms.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('No forms yet.', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: _textPrimary)),
-                  const SizedBox(height: 6),
-                  const Text('Create your first form to get started.', style: TextStyle(color: _textSecondary)),
-                  const SizedBox(height: 14),
-                  FilledButton.icon(
-                    onPressed: onCreateNewForm,
-                    icon: const Icon(Icons.add),
-                    label: const Text('New Form'),
-                  )
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      itemBuilder: (context, index) {
-        final form = controller.forms[index];
-        return Card(
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            title: Text(form.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textPrimary)),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text('${form.fieldCount} elements • v${form.version}.0', style: const TextStyle(color: _textSecondary)),
-            ),
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: (form.isPublished ? _successColor : _textTertiary).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                form.isPublished ? 'Published' : 'Active',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: form.isPublished ? _successColor : _textSecondary,
-                ),
-              ),
-            ),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => FormRunnerScreen(
-                    api: controller.api,
-                    formId: form.id,
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemCount: controller.forms.length,
-    );
-  }
-}
-
-class _ProfileTab extends StatelessWidget {
-  const _ProfileTab({required this.summary});
-
   final Map<String, dynamic>? summary;
+  final Map<String, FormAnalyticsSnapshot> analyticsByForm;
+  final void Function(String formId) onOpenForm;
 
   @override
   Widget build(BuildContext context) {
     if (summary == null) return const Center(child: CircularProgressIndicator());
 
-    final forms = (summary!['forms_created'] ?? 0).toString();
-    final total = (summary!['total_responses'] ?? 0).toString();
-    final today = (summary!['responses_today'] ?? 0).toString();
-    final memberSince = (summary!['member_since'] ?? '').toString();
+    final formsCreated = (summary!['forms_created'] ?? 0).toString();
+    final totalResponses = (summary!['total_responses'] ?? 0).toString();
+    final responsesToday = (summary!['responses_today'] ?? 0).toString();
+    final lastActivity = _formatDateTime(summary!['last_activity_at']?.toString());
+    final ownedForms = controller.forms.where((f) => f.isOwner).toList();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -800,16 +734,150 @@ class _ProfileTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _StatRow(label: 'Forms created', value: forms),
-                _StatRow(label: 'Total responses', value: total),
-                _StatRow(label: 'Responses today', value: today),
-                _StatRow(label: 'Member since', value: memberSince.isEmpty ? '-' : memberSince),
+                _StatRow(label: 'Forms created', value: formsCreated),
+                _StatRow(label: 'Total responses', value: totalResponses),
+                _StatRow(label: 'Responses today', value: responsesToday),
+                _StatRow(label: 'Last activity', value: lastActivity),
               ],
             ),
           ),
-        )
+        ),
+        const SizedBox(height: 12),
+        if (ownedForms.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('No owned forms found yet.', style: TextStyle(color: _textSecondary)),
+            ),
+          )
+        else
+          ...ownedForms.map((form) {
+            final metric = analyticsByForm[form.id] ??
+                const FormAnalyticsSnapshot(responseCount: 0, lastResponseAt: null);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Card(
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  title: Text(form.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textPrimary)),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      '${form.fieldCount} fields • ${metric.responseCount} responses • Last: ${_formatDateTime(metric.lastResponseAt)}',
+                      style: const TextStyle(color: _textSecondary),
+                    ),
+                  ),
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: (form.isPublished ? _successColor : _textTertiary).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      form.isPublished ? 'Published' : 'Draft',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: form.isPublished ? _successColor : _textSecondary,
+                      ),
+                    ),
+                  ),
+                  onTap: () => onOpenForm(form.id),
+                ),
+              ),
+            );
+          }),
       ],
     );
+  }
+}
+
+class _SubmitTab extends StatelessWidget {
+  const _SubmitTab({required this.formIdController, required this.onOpenForm});
+
+  final TextEditingController formIdController;
+  final void Function(String formId) onOpenForm;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Submit a form', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: _textPrimary)),
+              const SizedBox(height: 6),
+              const Text('Enter a form ID to open the mobile submission flow.', style: TextStyle(color: _textSecondary)),
+              const SizedBox(height: 14),
+              TextField(
+                controller: formIdController,
+                decoration: const InputDecoration(labelText: 'Form ID', hintText: 'form_abc12345'),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => onOpenForm(formIdController.text),
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Open form'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _formatDateTime(String? iso) {
+  if (iso == null || iso.isEmpty) return '—';
+  final date = DateTime.tryParse(iso);
+  if (date == null) return '—';
+  final local = date.toLocal();
+  final month = _monthShort(local.month);
+  final two = local.minute.toString().padLeft(2, '0');
+  return '${local.day} $month ${local.year}, ${local.hour}:$two';
+}
+
+String _monthShort(int month) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  if (month < 1 || month > 12) return '—';
+  return months[month - 1];
+}
+
+class FormAnalyticsSnapshot {
+  const FormAnalyticsSnapshot({required this.responseCount, required this.lastResponseAt});
+
+  final int responseCount;
+  final String? lastResponseAt;
+
+  factory FormAnalyticsSnapshot.fromResponsesPayload(Map<String, dynamic> payload) {
+    final responses = (payload['responses'] as List?) ?? const [];
+    String? last;
+    if (responses.isNotEmpty) {
+      final first = responses.first;
+      if (first is Map<String, dynamic>) {
+        last = first['submitted_at']?.toString();
+      } else if (first is Map) {
+        last = first['submitted_at']?.toString();
+      }
+    }
+    return FormAnalyticsSnapshot(responseCount: responses.length, lastResponseAt: last);
   }
 }
 
@@ -832,7 +900,7 @@ class _SettingsTab extends StatelessWidget {
         const Card(
           child: ListTile(
             title: Text('Mobile scope'),
-            subtitle: Text('This app mirrors auth, registry, and public stage flows from the React app.'),
+            subtitle: Text('Mobile supports form submissions and admin analytics for owned forms.'),
           ),
         )
       ],
@@ -855,7 +923,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
   String _status = 'loading';
   String _error = '';
   bool _submitted = false;
-  int _pageIndex = 0;
+  List<String> _pageTrail = [];
   String? _deadlineAt;
   bool _closedByDeadline = false;
 
@@ -912,7 +980,10 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
       _schema = schema;
       _deadlineAt = deadlineAt;
       _closedByDeadline = isClosed;
-      _pageIndex = 0;
+        final pages = schema.settings.pages.isEmpty
+          ? [const FormPage(id: 'page_1', title: 'Page 1')]
+          : schema.settings.pages;
+        _pageTrail = pages.first.id.isNotEmpty ? [pages.first.id] : [];
 
       if (!_closedByDeadline) {
         await _openSession(schema);
@@ -1007,6 +1078,57 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     return false;
   }
 
+  dynamic _normalizeRuleValue(dynamic value) {
+    if (value == null) return '';
+    if (value is List) return value.map((e) => e.toString()).toList();
+    return value.toString();
+  }
+
+  bool _evaluateRuleConditions(LogicRule rule) {
+    if (rule.conditions.isEmpty) return false;
+
+    final results = rule.conditions.map((condition) {
+      final answer = _answers[condition.fieldId];
+      if (answer == null) return false;
+
+      final expected = condition.value ?? '';
+      final normalizedAnswer = _normalizeRuleValue(answer);
+
+      switch (condition.operator) {
+        case 'equals':
+          if (normalizedAnswer is List<String>) {
+            return normalizedAnswer.contains(expected.toString());
+          }
+          return normalizedAnswer == expected.toString();
+        case 'not_equals':
+          if (normalizedAnswer is List<String>) {
+            return !normalizedAnswer.contains(expected.toString());
+          }
+          return normalizedAnswer != expected.toString();
+        case 'contains':
+          if (normalizedAnswer is List<String>) {
+            return normalizedAnswer.contains(expected.toString());
+          }
+          return normalizedAnswer
+              .toString()
+              .toLowerCase()
+              .contains(expected.toString().toLowerCase());
+        case 'greater_than':
+          return (num.tryParse(answer.toString()) ?? 0) >
+              (num.tryParse(expected.toString()) ?? 0);
+        case 'less_than':
+          return (num.tryParse(answer.toString()) ?? 0) <
+              (num.tryParse(expected.toString()) ?? 0);
+        default:
+          return false;
+      }
+    }).toList();
+
+    return rule.conditionOperator == 'OR'
+        ? results.any((v) => v)
+        : results.every((v) => v);
+  }
+
   Map<String, bool> _visibilityMap(FormSchema schema) {
     final map = <String, bool>{};
     for (final field in schema.fields) {
@@ -1014,27 +1136,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     }
 
     for (final rule in schema.logicRules) {
-      final results = rule.conditions.map((condition) {
-        final answer = _answers[condition.fieldId];
-        if (answer == null) return false;
-
-        switch (condition.operator) {
-          case 'equals':
-            return answer == condition.value;
-          case 'not_equals':
-            return answer != condition.value;
-          case 'contains':
-            return answer.toString().contains(condition.value?.toString() ?? '');
-          case 'greater_than':
-            return (num.tryParse(answer.toString()) ?? 0) > (num.tryParse(condition.value.toString()) ?? 0);
-          case 'less_than':
-            return (num.tryParse(answer.toString()) ?? 0) < (num.tryParse(condition.value.toString()) ?? 0);
-          default:
-            return false;
-        }
-      }).toList();
-
-      final isMatch = (rule.conditionOperator == 'AND') ? results.every((v) => v) : results.any((v) => v);
+      final isMatch = _evaluateRuleConditions(rule);
 
       if (isMatch && map.containsKey(rule.action.targetFieldId)) {
         if (rule.action.type == 'show') {
@@ -1048,7 +1150,59 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     return map;
   }
 
-  Future<void> _submit(FormSchema schema, List<FormField> currentPageFields, bool isLastPage) async {
+  String? _sequentialNextPageId(List<FormPage> pages, String currentPageId) {
+    final idx = pages.indexWhere((p) => p.id == currentPageId);
+    if (idx == -1) return pages.isEmpty ? null : pages.first.id;
+    if (idx + 1 >= pages.length) return null;
+    return pages[idx + 1].id;
+  }
+
+  String? _resolveNextPageId(FormSchema schema, List<FormPage> pages, String currentPageId) {
+    for (final rule in schema.logicRules) {
+      if (rule.action.type != 'jump_to_page') continue;
+      final sourcePageId = rule.action.sourcePageId;
+      if (sourcePageId != null && sourcePageId.isNotEmpty && sourcePageId != currentPageId) {
+        continue;
+      }
+
+      final targetPageId = rule.action.targetPageId;
+      if (targetPageId == null || targetPageId.isEmpty || targetPageId == currentPageId) {
+        continue;
+      }
+
+      if (_evaluateRuleConditions(rule) && pages.any((p) => p.id == targetPageId)) {
+        return targetPageId;
+      }
+    }
+
+    return _sequentialNextPageId(pages, currentPageId);
+  }
+
+  List<String> _buildForwardPath(FormSchema schema, List<FormPage> pages, String startPageId) {
+    if (startPageId.isEmpty) return const [];
+    final path = <String>[];
+    final visited = <String>{};
+    var current = startPageId;
+    var guard = 0;
+
+    while (current.isNotEmpty && guard < 100) {
+      path.add(current);
+      visited.add(current);
+      final next = _resolveNextPageId(schema, pages, current);
+      if (next == null || visited.contains(next)) break;
+      current = next;
+      guard += 1;
+    }
+
+    return path;
+  }
+
+  Future<void> _submit(
+    FormSchema schema,
+    List<FormField> currentPageFields,
+    bool isLastPage,
+    String? nextPageId,
+  ) async {
     setState(() => _submitError = '');
 
     for (final field in currentPageFields) {
@@ -1059,7 +1213,16 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     }
 
     if (!isLastPage) {
-      setState(() => _pageIndex += 1);
+      if (nextPageId != null && nextPageId.isNotEmpty) {
+        setState(() {
+          if (_pageTrail.contains(nextPageId)) {
+            final idx = _pageTrail.indexOf(nextPageId);
+            _pageTrail = _pageTrail.sublist(0, idx + 1);
+          } else {
+            _pageTrail = [..._pageTrail, nextPageId];
+          }
+        });
+      }
       return;
     }
 
@@ -1195,9 +1358,22 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
     final visibility = _visibilityMap(schema);
     final visibleFields = schema.fields.where((f) => visibility[f.id] == true).toList();
     final pages = schema.settings.pages.isEmpty ? [const FormPage(id: 'page_1', title: 'Page 1')] : schema.settings.pages;
-    final pageId = pages[_pageIndex.clamp(0, pages.length - 1)].id;
-    final currentPageFields = visibleFields.where((f) => (f.meta['pageId']?.toString() ?? pages.first.id) == pageId).toList();
-    final isLastPage = _pageIndex >= pages.length - 1;
+    final sanitizedTrail = _pageTrail.where((id) => pages.any((p) => p.id == id)).toList();
+    final currentPageId = sanitizedTrail.isNotEmpty ? sanitizedTrail.last : pages.first.id;
+    final currentPage = pages.firstWhere(
+      (p) => p.id == currentPageId,
+      orElse: () => pages.first,
+    );
+    final nextPageId = _resolveNextPageId(schema, pages, currentPage.id);
+    final currentPageFields = visibleFields
+      .where((f) => (f.meta['pageId']?.toString() ?? pages.first.id) == currentPage.id)
+      .toList();
+    final isLastPage = nextPageId == null;
+
+    final forwardPath = _buildForwardPath(schema, pages, currentPage.id);
+    final completedBeforeCurrent = sanitizedTrail.isEmpty ? 0 : sanitizedTrail.length - 1;
+    final logicalTotalPages = (completedBeforeCurrent + forwardPath.length).clamp(1, 1000);
+    final logicalCurrentPage = (completedBeforeCurrent + 1).clamp(1, logicalTotalPages);
 
     return Scaffold(
       appBar: AppBar(title: Text(schema.title)),
@@ -1227,11 +1403,11 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            pages[_pageIndex].title,
+                            currentPage.title,
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _textSecondary),
                           ),
                           Text(
-                            'Page ${_pageIndex + 1} / ${pages.length}',
+                            'Page $logicalCurrentPage / $logicalTotalPages',
                             style: const TextStyle(fontSize: 12, color: _textSecondary),
                           ),
                         ],
@@ -1239,7 +1415,7 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
                       const SizedBox(height: 8),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(value: (_pageIndex + 1) / pages.length, minHeight: 6),
+                        child: LinearProgressIndicator(value: logicalCurrentPage / logicalTotalPages, minHeight: 6),
                       ),
                       const SizedBox(height: 20),
                     ],
@@ -1290,17 +1466,23 @@ class _FormRunnerScreenState extends State<FormRunnerScreen> {
                               ),
                             Row(
                               children: [
-                                if (_pageIndex > 0)
+                                if (sanitizedTrail.length > 1)
                                   OutlinedButton(
-                                    onPressed: () => setState(() => _pageIndex -= 1),
+                                    onPressed: () {
+                                      setState(() {
+                                        if (_pageTrail.length > 1) {
+                                          _pageTrail = _pageTrail.sublist(0, _pageTrail.length - 1);
+                                        }
+                                      });
+                                    },
                                     child: const Text('Back'),
                                   ),
-                                if (_pageIndex > 0) const SizedBox(width: 12),
+                                if (sanitizedTrail.length > 1) const SizedBox(width: 12),
                                 Expanded(
                                   child: FilledButton(
                                     onPressed: _submitting || (_timedEnabled && _remaining <= 0)
                                         ? null
-                                        : () => _submit(schema, currentPageFields, isLastPage),
+                                        : () => _submit(schema, currentPageFields, isLastPage, nextPageId),
                                     child: Text(
                                       _submitting
                                           ? 'Submitting…'
@@ -1747,6 +1929,7 @@ class FormSummary {
     required this.isPublished,
     required this.fieldCount,
     required this.version,
+    required this.isOwner,
   });
 
   final String id;
@@ -1754,6 +1937,7 @@ class FormSummary {
   final bool isPublished;
   final int fieldCount;
   final int version;
+  final bool isOwner;
 
   factory FormSummary.fromJson(Map<String, dynamic> json) {
     final schema = (json['schema'] is Map<String, dynamic>) ? json['schema'] as Map<String, dynamic> : <String, dynamic>{};
@@ -1763,6 +1947,7 @@ class FormSummary {
       isPublished: (json['is_published'] ?? false) as bool,
       fieldCount: (json['field_count'] as num?)?.toInt() ?? ((schema['fields'] as List?)?.length ?? 0),
       version: (json['version'] as num?)?.toInt() ?? ((schema['version'] as num?)?.toInt() ?? 1),
+      isOwner: (json['is_owner'] ?? true) as bool,
     );
   }
 }
@@ -1914,15 +2099,24 @@ class LogicCondition {
 }
 
 class LogicAction {
-  const LogicAction({required this.type, required this.targetFieldId});
+  const LogicAction({
+    required this.type,
+    required this.targetFieldId,
+    this.sourcePageId,
+    this.targetPageId,
+  });
 
   final String type;
   final String targetFieldId;
+  final String? sourcePageId;
+  final String? targetPageId;
 
   factory LogicAction.fromJson(Map<String, dynamic> json) {
     return LogicAction(
       type: (json['type'] ?? '').toString(),
       targetFieldId: (json['targetFieldId'] ?? '').toString(),
+      sourcePageId: json['sourcePageId']?.toString(),
+      targetPageId: json['targetPageId']?.toString(),
     );
   }
 }

@@ -248,6 +248,95 @@ export default function Stage() {
     fields: visibleFields.filter((f) => (f.meta?.pageId || pages[0].id) === p.id),
   }));
 
+  const isDarkTheme = /--color-bg-base:\s*#(?:000|0b1020|111111|101010)/i.test(schema?.theme?.customCSS || '')
+    || /--color-text-primary:\s*#(?:fff|f7f8ff|ffffff)/i.test(schema?.theme?.customCSS || '')
+    || schema?.theme?.preset === 'dark';
+
+  const previewThemeOverrides = isDarkTheme
+    ? `
+      .zealflow-preview .card,
+      .zealflow-preview .modal-glass,
+      .zealflow-preview .input-base,
+      .zealflow-preview input,
+      .zealflow-preview textarea,
+      .zealflow-preview select,
+      .zealflow-preview button[type="button"],
+      .zealflow-preview button[type="submit"] {
+        color: #F7F8FF;
+      }
+
+      .zealflow-preview .card,
+      .zealflow-preview .modal-glass {
+        background: rgba(255,255,255,0.05) !important;
+        border-color: rgba(148,163,184,0.22) !important;
+        box-shadow: 0 18px 50px rgba(0,0,0,0.34) !important;
+        backdrop-filter: blur(16px);
+      }
+
+      .zealflow-preview .input-base,
+      .zealflow-preview input:not([type="checkbox"]):not([type="radio"]),
+      .zealflow-preview textarea,
+      .zealflow-preview select {
+        background: rgba(255,255,255,0.06) !important;
+        border-color: rgba(148,163,184,0.26) !important;
+        color: #F7F8FF !important;
+      }
+
+      .zealflow-preview .input-base::placeholder,
+      .zealflow-preview input::placeholder,
+      .zealflow-preview textarea::placeholder {
+        color: rgba(226,232,240,0.58) !important;
+      }
+
+      .zealflow-preview .bg-\[\#FFFFFF\],
+      .zealflow-preview [class*="bg-white"],
+      .zealflow-preview [class*="bg-\[\#fafaf8\]"],
+      .zealflow-preview [class*="bg-\[\#FAFAF8\]"] {
+        background-color: rgba(255,255,255,0.05) !important;
+      }
+
+      .zealflow-preview .border-\[var\(--color-border-warm\)\] {
+        border-color: rgba(148,163,184,0.24) !important;
+      }
+
+      .zealflow-preview .text-\[var\(--color-text-primary\)\] {
+        color: #F7F8FF !important;
+      }
+
+      .zealflow-preview .text-\[var\(--color-text-secondary\)\],
+      .zealflow-preview .text-\[var\(--color-text-tertiary\)\] {
+        color: rgba(226,232,240,0.72) !important;
+      }
+
+      .zealflow-preview .btn-secondary {
+        background: rgba(255,255,255,0.05) !important;
+        border-color: rgba(148,163,184,0.22) !important;
+        color: #F7F8FF !important;
+      }
+
+      .zealflow-preview .btn-secondary:hover {
+        background: rgba(255,255,255,0.09) !important;
+      }
+
+      .zealflow-preview .btn-primary {
+        color: #08111F !important;
+        background: linear-gradient(135deg, #7C8CFF 0%, #57D8FF 100%) !important;
+      }
+
+      .zealflow-preview,
+      .zealflow-preview * {
+        color-scheme: dark;
+      }
+
+      .zealflow-preview [role="dialog"],
+      .zealflow-preview .shadow-2xl,
+      .zealflow-preview .shadow-xl,
+      .zealflow-preview .shadow-lg {
+        box-shadow: 0 24px 70px rgba(0,0,0,0.42) !important;
+      }
+    `
+    : '';
+
   const sanitizedTrail = pageTrail.filter((id) => pages.some((p) => p.id === id));
   const currentPageId = sanitizedTrail[sanitizedTrail.length - 1] || pages[0]?.id;
   const currentPage = fieldsByPage.find((p) => p.id === currentPageId) || fieldsByPage[0] || { fields: [] };
@@ -329,7 +418,12 @@ export default function Stage() {
         <style dangerouslySetInnerHTML={{ __html: schema.theme.customCSS }} />
       )}
 
-      <div className="max-w-[720px] mx-auto px-6 py-[96px]">
+      {previewThemeOverrides && (
+        <style dangerouslySetInnerHTML={{ __html: previewThemeOverrides }} />
+      )}
+
+      <div className={`zealflow-preview max-w-[720px] mx-auto px-6 py-[96px] ${isDarkTheme ? 'relative' : ''}`}>
+        {isDarkTheme && <div className="template-glow" />}
         <h1 className="text-5xl display-font text-[var(--color-text-primary)] mb-[64px]">{schema.title}</h1>
 
         {(deadlineAt || timedSession.enabled) && (

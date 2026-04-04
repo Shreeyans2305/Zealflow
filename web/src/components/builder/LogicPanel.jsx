@@ -56,6 +56,7 @@ export default function LogicPanel() {
       ],
       action: {
         type: 'jump_to_page',
+        sourcePageId,
         targetPageId: fallbackTarget,
       },
     });
@@ -115,7 +116,12 @@ export default function LogicPanel() {
                 const nextTarget = pages.find((p) => p.id !== nextSourcePageId)?.id || pages[0]?.id;
                 updateLogicRule(rule.id, {
                   conditions: [{ ...condition, fieldId: e.target.value, value: nextValue }],
-                  action: { ...rule.action, type: 'jump_to_page', targetPageId: nextTarget },
+                  action: {
+                    ...rule.action,
+                    type: 'jump_to_page',
+                    sourcePageId: nextSourcePageId,
+                    targetPageId: nextTarget,
+                  },
                 });
               }}
               className="input-base w-full"
@@ -174,6 +180,7 @@ export default function LogicPanel() {
                 action: {
                   ...rule.action,
                   type: 'jump_to_page',
+                  sourcePageId,
                   targetPageId: e.target.value,
                 },
               })}
@@ -190,8 +197,9 @@ export default function LogicPanel() {
   };
 
   return (
-    <aside className="absolute right-0 top-0 bottom-0 w-[400px] bg-[#FFFFFF] border-l border-[var(--color-border-warm)] shadow-2xl z-50 flex flex-col">
-      <div className="flex items-center justify-between p-8 border-b border-[var(--color-border-warm)] bg-[#FAFAF8]">
+    <aside className="absolute right-0 top-0 bottom-0 w-[400px] bg-[var(--color-bg-surface)] border-l border-[var(--color-border-warm)] shadow-2xl z-50 flex flex-col overflow-hidden">
+      <div className="absolute -top-14 -right-10 w-36 h-36 rounded-full bg-[var(--color-accent-soft)] blur-3xl pointer-events-none opacity-80" />
+      <div className="flex items-center justify-between p-8 border-b border-[var(--color-border-warm)] bg-white/55 backdrop-blur-sm relative z-10">
         <div>
           <h2 className="label-upper text-[var(--color-text-primary)]">Logic Routing</h2>
           <p className="text-[12px] text-[var(--color-text-secondary)] mt-1">Define conditional page branches.</p>
@@ -201,15 +209,15 @@ export default function LogicPanel() {
         </button>
       </div>
 
-      <div className="p-8 overflow-y-auto flex-1 space-y-6 custom-scrollbar">
+      <div className="p-8 overflow-y-auto flex-1 space-y-6 custom-scrollbar relative z-10">
         {pages.length < 2 && (
-          <div className="text-[13px] text-[var(--color-text-secondary)] border border-[var(--color-border-warm)] rounded-[12px] p-4 bg-[#FAFAF8]">
+          <div className="text-[13px] text-[var(--color-text-secondary)] border border-[var(--color-border-warm)] rounded-[16px] p-4 bg-white/75">
             Add at least two pages to enable branching.
           </div>
         )}
 
         {fields.length === 0 && (
-          <div className="text-[13px] text-[var(--color-text-secondary)] border border-[var(--color-border-warm)] rounded-[12px] p-4 bg-[#FAFAF8]">
+          <div className="text-[13px] text-[var(--color-text-secondary)] border border-[var(--color-border-warm)] rounded-[16px] p-4 bg-white/75">
             Add questions first, then create rules based on answers.
           </div>
         )}
@@ -219,7 +227,7 @@ export default function LogicPanel() {
         <button
           onClick={addBranchRule}
           disabled={fields.length === 0 || pages.length < 2}
-          className="w-full py-3 px-4 border border-[var(--color-border-warm)] rounded-[10px] text-[13px] font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full py-3 px-4 border border-[var(--color-border-warm)] rounded-[14px] text-[13px] font-medium text-[var(--color-text-primary)] bg-white/80 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
         >
           <Plus size={14} />
           Add branching rule

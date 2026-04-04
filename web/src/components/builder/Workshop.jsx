@@ -12,6 +12,30 @@ import { useCollaboration } from '../../hooks/useCollaboration';
 import { CollaboratorCursors } from '../collaboration/CollaboratorCursors';
 import { useAuthStore } from '../../store/authStore';
 
+function scopeThemeCssForBuilder(css) {
+  if (!css) return '';
+  const scope = '.zealflow-builder-preview';
+
+  return css
+    .replace(/:root\b/g, scope)
+    .replace(/(^|\})\s*([^{}@][^{}]*)\{/g, (match, brace, selectorBlock) => {
+      const scopedSelectors = selectorBlock
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((selector) => {
+          if (selector.startsWith(scope)) return selector;
+          if (selector.startsWith('@')) return selector;
+          if (selector.startsWith('html') || selector.startsWith('body')) {
+            return `${scope}${selector.replace(/^(html|body)/, '')}`;
+          }
+          return `${scope} ${selector}`;
+        })
+        .join(', ');
+      return `${brace}${brace ? ' ' : ''}${scopedSelectors} {`;
+    });
+}
+
 export default function Workshop() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -37,6 +61,78 @@ export default function Workshop() {
   const applyRemoteUpdate = useFormStore((s) => s.applyRemoteUpdate);
   const applyRemoteSchemaSnapshot = useFormStore((s) => s.applyRemoteSchemaSnapshot);
   const flushAutoSaveNow = useFormStore((s) => s.flushAutoSaveNow);
+
+  const themeCss = scopeThemeCssForBuilder(schema?.theme?.customCSS || '');
+  const isDarkTheme = /--color-bg-base:\s*#(?:000|0b1020|111111|101010)/i.test(schema?.theme?.customCSS || '')
+    || /--color-text-primary:\s*#(?:fff|f7f8ff|ffffff)/i.test(schema?.theme?.customCSS || '')
+    || schema?.theme?.preset === 'dark';
+
+  const builderPreviewOverrides = `
+      .zealflow-builder-preview .zealflow-field-card,
+      .zealflow-builder-preview .card,
+      .zealflow-builder-preview .modal-glass {
+        background: var(--color-bg-surface) !important;
+        border-color: var(--color-border-warm) !important;
+        color: var(--color-text-primary) !important;
+        box-shadow: 0 18px 50px rgba(0,0,0,${isDarkTheme ? '0.34' : '0.06'}) !important;
+        backdrop-filter: blur(16px);
+      }
+
+      .zealflow-builder-preview .input-base,
+      .zealflow-builder-preview input:not([type="checkbox"]):not([type="radio"]),
+      .zealflow-builder-preview textarea,
+      .zealflow-builder-preview select {
+        background: var(--color-bg-surface) !important;
+        border-color: var(--color-border-warm) !important;
+        color: var(--color-text-primary) !important;
+      }
+
+      .zealflow-builder-preview .input-base::placeholder,
+      .zealflow-builder-preview input::placeholder,
+      .zealflow-builder-preview textarea::placeholder {
+        color: var(--color-text-tertiary) !important;
+      }
+
+      .zealflow-builder-preview .bg-\[\#FFFFFF\],
+      .zealflow-builder-preview [class*="bg-white"],
+      .zealflow-builder-preview [class*="bg-\[\#fafaf8\]"],
+      .zealflow-builder-preview [class*="bg-\[\#FAFAF8\]"] {
+        background-color: var(--color-bg-surface) !important;
+      }
+
+      .zealflow-builder-preview .border-\[var\(--color-border-warm\)\] {
+        border-color: var(--color-border-warm) !important;
+      }
+
+      .zealflow-builder-preview .text-\[var\(--color-text-primary\)\] {
+        color: var(--color-text-primary) !important;
+      }
+
+      .zealflow-builder-preview .text-\[var\(--color-text-secondary\)\],
+      .zealflow-builder-preview .text-\[var\(--color-text-tertiary\)\] {
+        color: var(--color-text-secondary) !important;
+      }
+
+      .zealflow-builder-preview .btn-secondary {
+        background: color-mix(in srgb, var(--color-bg-surface) 88%, #fff 12%) !important;
+        border-color: var(--color-border-warm) !important;
+        color: var(--color-text-primary) !important;
+      }
+
+      .zealflow-builder-preview .btn-secondary:hover {
+        background: color-mix(in srgb, var(--color-bg-surface) 72%, #fff 28%) !important;
+      }
+
+      .zealflow-builder-preview .btn-primary {
+        color: #08111F !important;
+        background: linear-gradient(135deg, #7C8CFF 0%, #57D8FF 100%) !important;
+      }
+
+      .zealflow-builder-preview,
+      .zealflow-builder-preview * {
+        color-scheme: ${isDarkTheme ? 'dark' : 'light'};
+      }
+    `;
 
   // Initialize Yjs provider connection
   useEffect(() => {
@@ -139,8 +235,11 @@ export default function Workshop() {
       className="flex flex-col h-screen w-full bg-[var(--color-bg-base)] text-[var(--color-text-primary)] transition-all duration-150 ease-out relative"
       onMouseMove={handleMouseMove}
     >
-      {schema?.theme?.customCSS && (
-        <style dangerouslySetInnerHTML={{ __html: schema.theme.customCSS }} />
+      {themeCss && (
+        <style dangerouslySetInnerHTML={{ __html: themeCss }} />
+      )}
+      {builderPreviewOverrides && (
+        <style dangerouslySetInnerHTML={{ __html: builderPreviewOverrides }} />
       )}
       
       <TopBar />
@@ -148,7 +247,7 @@ export default function Workshop() {
       <div className="flex flex-1 overflow-hidden relative">
         <LeftSidebar />
 
-        <main className="flex-1 flex justify-center overflow-y-auto relative py-12 z-10 w-full px-6">
+        <main className="zealflow-builder-preview flex-1 flex justify-center overflow-y-auto relative py-12 z-10 w-full px-6">
           <CollaboratorCursors collaborators={collaborators} currentUserId={admin?.id} />
           <Canvas />
         </main>
