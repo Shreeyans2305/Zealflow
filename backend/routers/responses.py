@@ -1,11 +1,14 @@
 import csv
 import io
 import json
+import os
+import re
 import time
+from uuid import uuid4
 from datetime import datetime, timezone
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from models.responses import SubmitRequest
@@ -14,6 +17,8 @@ from services.auth_service import ALGORITHM, SECRET_KEY
 from services.supabase_client import get_supabase
 
 router = APIRouter()
+STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "form-uploads")
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 
 
 def _normalize_ip(ip: str | None) -> str | None:
@@ -67,6 +72,26 @@ def _resolve_timed_seconds(settings: dict) -> int:
     return max(0, raw_seconds)
 
 
+def _sanitize_filename(name: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", name or "file")
+    cleaned = cleaned.strip("._")
+    return cleaned or "file"
+
+
+def _assert_form_open_for_response(sb, form_id: str) -> dict:
+    form_result = (
+        sb.table("forms").select("id,is_published,schema").eq("id", form_id).maybe_single().execute()
+    )
+    if not form_result.data:
+        raise HTTPException(status_code=404, detail="Form not found")
+
+    form = form_result.data
+    settings = (form.get("schema") or {}).get("settings") or {}
+    if _is_deadline_expired(settings):
+        raise HTTPException(status_code=403, detail="This form is closed. The deadline has passed.")
+    return form
+
+
 @router.post("/{form_id}/open")
 def open_form_session(form_id: str, request: Request):
     sb = get_supabase()
@@ -113,17 +138,9 @@ def open_form_session(form_id: str, request: Request):
 def submit_response(form_id: str, body: SubmitRequest, request: Request):
     sb = get_supabase()
 
-    form_result = (
-        sb.table("forms").select("id,is_published,schema").eq("id", form_id).maybe_single().execute()
-    )
-    if not form_result.data:
-        raise HTTPException(status_code=404, detail="Form not found")
-
-    schema = form_result.data.get("schema") or {}
+    form = _assert_form_open_for_response(sb, form_id)
+    schema = form.get("schema") or {}
     settings = schema.get("settings") or {}
-
-    if _is_deadline_expired(settings):
-        raise HTTPException(status_code=403, detail="This form is closed. The deadline has passed.")
 
     allow_anonymous = settings.get("allowAnonymousEntries", True)
 
@@ -178,6 +195,89 @@ def submit_response(form_id: str, body: SubmitRequest, request: Request):
 
     row = result.data[0]
     return {"id": row["id"], "submitted_at": row["submitted_at"]}
+
+
+@router.post("/{form_id}/files/upload")
+async def upload_response_file(
+    form_id: str,
+    file: UploadFile = File(...),
+    field_id: str | None = Form(None),
+):
+    sb = get_supabase()
+    _assert_form_open_for_response(sb, form_id)
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing filename")
+
+    content = await file.read()
+    size_bytes = len(content)
+    if size_bytes <= 0:
+        raise HTTPException(status_code=400, detail="File is empty")
+    if size_bytes > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"File exceeds {MAX_UPLOAD_BYTES} bytes limit")
+
+    safe_name = _sanitize_filename(file.filename)
+    suffix = safe_name.rsplit(".", 1)[-1] if "." in safe_name else "bin"
+    token = uuid4().hex
+    key_prefix = f"forms/{form_id}/responses"
+    object_path = f"{key_prefix}/{token}.{suffix}"
+
+    try:
+        sb.storage.from_(STORAGE_BUCKET).upload(
+            object_path,
+            content,
+            {
+                "content-type": file.content_type or "application/octet-stream",
+                "upsert": "false",
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload file: {e}")
+
+    return {
+        "field_id": field_id,
+        "bucket": STORAGE_BUCKET,
+        "path": object_path,
+        "file_name": safe_name,
+        "mime_type": file.content_type or "application/octet-stream",
+        "size_bytes": size_bytes,
+    }
+
+
+@router.get("/{form_id}/files/sign")
+def sign_response_file_url(
+    form_id: str,
+    path: str,
+    bucket: str | None = None,
+    current_admin: dict = Depends(get_current_admin),
+):
+    sb = get_supabase()
+
+    form_result = (
+        sb.table("forms")
+        .select("id,admin_id")
+        .eq("id", form_id)
+        .maybe_single()
+        .execute()
+    )
+    if not form_result.data or form_result.data["admin_id"] != current_admin["id"]:
+        raise HTTPException(status_code=404, detail="Form not found")
+
+    normalized_bucket = bucket or STORAGE_BUCKET
+    allowed_prefix = f"forms/{form_id}/responses/"
+    if not path.startswith(allowed_prefix):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    try:
+        signed = sb.storage.from_(normalized_bucket).create_signed_url(path, 600)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate signed URL: {e}")
+
+    signed_url = signed.get("signedURL") if isinstance(signed, dict) else None
+    if not signed_url:
+        raise HTTPException(status_code=500, detail="Failed to create signed URL")
+
+    return {"url": signed_url}
 
 
 @router.get("/{form_id}/responses")
@@ -250,6 +350,8 @@ def export_csv(form_id: str, current_admin: dict = Depends(get_current_admin)):
         row = [resp["submitted_at"]]
         for field in visible_fields:
             value = data.get(field["id"], "")
+            if isinstance(value, dict) and value.get("path") and value.get("bucket"):
+                value = value.get("file_name") or value.get("path")
             if isinstance(value, (list, dict)):
                 value = json.dumps(value)
             row.append(value)

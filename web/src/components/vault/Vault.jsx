@@ -45,6 +45,24 @@ export default function Vault() {
   const fields = data?.schema?.fields?.filter((f) => !f.meta?.hidden) || [];
   const responses = data?.responses || [];
 
+  const isFileAnswer = (val) => {
+    return Boolean(val && typeof val === 'object' && val.path && val.bucket);
+  };
+
+  const handleDownloadFile = async (fileValue) => {
+    if (!fileValue?.path) return;
+    try {
+      const query = new URLSearchParams({ path: fileValue.path });
+      if (fileValue.bucket) query.set('bucket', fileValue.bucket);
+      const result = await api.get(`/api/forms/${id}/files/sign?${query.toString()}`);
+      if (result?.url) {
+        window.open(result.url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err) {
+      alert(err.message || 'Unable to download file');
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-[var(--color-bg-base)] text-[var(--color-text-primary)]">
       <AdminSidebar />
@@ -143,6 +161,20 @@ export default function Vault() {
                       </td>
                       {fields.map((col) => {
                         const val = resp.data?.[col.id];
+                        if (isFileAnswer(val)) {
+                          return (
+                            <td key={col.id} className="px-4 py-3 text-[13px] text-[var(--color-text-primary)] max-w-[280px]">
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadFile(val)}
+                                className="text-[var(--color-accent)] hover:underline truncate max-w-[240px] text-left"
+                                title={val.file_name || 'Download file'}
+                              >
+                                {val.file_name || 'Download file'}
+                              </button>
+                            </td>
+                          );
+                        }
                         const display =
                           val === undefined || val === null || val === ''
                             ? null
