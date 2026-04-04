@@ -7,12 +7,16 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+const _productionApiBaseUrl = 'https://zealflow-nw72.onrender.com';
+
 String get _defaultApiBaseUrl => const String.fromEnvironment(
       'ZEALFLOW_API_URL',
       defaultValue: '',
     ).isNotEmpty
     ? const String.fromEnvironment('ZEALFLOW_API_URL', defaultValue: '')
-    : (Platform.isAndroid ? 'http://10.0.2.2:8000' : 'http://localhost:8000');
+    : (const bool.fromEnvironment('dart.vm.product')
+        ? _productionApiBaseUrl
+        : (Platform.isAndroid ? 'http://10.0.2.2:8000' : 'http://localhost:8000'));
 
 const _bgBase = Color(0xFFF6F1EA);
 const _bgHover = Color(0xFFEFE7DD);
