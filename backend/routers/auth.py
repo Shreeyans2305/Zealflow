@@ -171,10 +171,13 @@ def signup(body: SignupRequest, background_tasks: BackgroundTasks):
         }
 
     background_tasks.add_task(_send_verification_email_safe, body.email, body.username, verify_token)
-    return {
+    response = {
         "message": "Account created. Verification email queued.",
         "email_sent": True,
     }
+    if ALLOW_DEV_VERIFY_FALLBACK:
+        response["verification_url"] = build_verification_url(verify_token)
+    return response
 
 
 @router.get("/verify")
@@ -217,7 +220,10 @@ def resend_verification(body: ResendVerificationRequest, background_tasks: Backg
         raise HTTPException(status_code=500, detail="SMTP is not configured")
 
     background_tasks.add_task(_send_verification_email_safe, body.email, admin["username"], verify_token)
-    return {"message": "Verification email queued.", "email_sent": True}
+    response = {"message": "Verification email queued.", "email_sent": True}
+    if ALLOW_DEV_VERIFY_FALLBACK:
+        response["verification_url"] = build_verification_url(verify_token)
+    return response
 
 
 @router.post("/login")
