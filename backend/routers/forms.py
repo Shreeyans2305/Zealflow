@@ -10,7 +10,7 @@ from postgrest.exceptions import APIError
 from models.forms import FormCreate, FormUpdate, FormShareRequest, FormJoinRequest, FormCollaboratorResponse
 from routers.auth import get_current_admin
 from services.auth_service import hash_password, verify_password
-from services.email_service import normalize_email_list, send_form_publish_email
+from services.email_service import normalize_email_list, send_bulk_form_publish_emails
 from services.supabase_client import get_supabase
 
 router = APIRouter()
@@ -384,19 +384,17 @@ def toggle_publish(form_id: str, current_admin: dict = Depends(get_current_admin
         form_url = f"{FRONTEND_URL}/f/{form_id}"
         form_title = updated_row.get("title") or schema_result.data.get("title") or "Untitled form"
         sent_count = 0
-
-        for recipient in recipients:
+        if recipients:
             try:
-                send_form_publish_email(
-                    recipient,
+                sent_count = send_bulk_form_publish_emails(
+                    recipients,
                     form_title=form_title,
                     form_url=form_url,
                     custom_message=message,
                     admin_name=current_admin.get("username"),
                 )
-                sent_count += 1
             except Exception as e:
-                print(f"[Zealflow] Publish email failed for {recipient}: {e}")
+                print(f"[Zealflow] Publish email batch failed: {e}")
 
         email_result = {
             "mailing_list_count": len(recipients),

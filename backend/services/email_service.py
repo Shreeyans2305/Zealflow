@@ -1,5 +1,6 @@
 import os
 import smtplib
+from contextlib import contextmanager
 from collections.abc import Iterable
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -13,6 +14,7 @@ SMTP_FROM = os.getenv("SMTP_FROM", "Zealflow <noreply@example.com>").strip()
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
+SMTP_TIMEOUT_SECONDS = int(os.getenv("SMTP_TIMEOUT_SECONDS", "15"))
 
 
 def build_verification_url(token: str) -> str:
@@ -24,20 +26,49 @@ def _envelope_from() -> str:
     return parsed_from if parsed_from and "@" in parsed_from and " " not in parsed_from else SMTP_USER
 
 
-def _send_message(msg: MIMEMultipart, to_email: str) -> None:
+def _smtp_modes() -> list[str]:
     if SMTP_USE_SSL:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(_envelope_from(), [to_email], msg.as_string())
-        return
+        return ["ssl"]
+    if SMTP_USE_TLS:
+        return ["starttls", "plain"]
+    return ["plain", "starttls"]
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+
+@contextmanager
+def _open_smtp(mode: str):
+    if mode == "ssl":
+        server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS)
+    else:
+        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS)
+
+    try:
         server.ehlo()
-        if SMTP_USE_TLS:
+        if mode == "starttls":
             server.starttls()
             server.ehlo()
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(_envelope_from(), [to_email], msg.as_string())
+        if SMTP_USER and SMTP_PASSWORD:
+            server.login(SMTP_USER, SMTP_PASSWORD)
+        yield server
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
+
+
+def _send_message(msg: MIMEMultipart, to_email: str) -> None:
+    last_error: Exception | None = None
+    for mode in _smtp_modes():
+        try:
+            with _open_smtp(mode) as server:
+                server.sendmail(_envelope_from(), [to_email], msg.as_string())
+            return
+        except Exception as exc:
+            last_error = exc
+
+    if last_error:
+        raise RuntimeError(f"SMTP send failed: {last_error}") from last_error
+    raise RuntimeError("SMTP send failed")
 
 
 def send_verification_email(to_email: str, username: str, token: str) -> None:
@@ -180,3 +211,89 @@ Open the form here:
     msg.attach(MIMEText(text_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
     _send_message(msg, to_email)
+
+
+def send_bulk_form_publish_emails(
+        recipients: list[str],
+        form_title: str,
+        form_url: str,
+        custom_message: str,
+        admin_name: str | None = None,
+) -> int:
+        if not SMTP_USER or not SMTP_PASSWORD:
+                raise RuntimeError("SMTP_USER and SMTP_PASSWORD must be configured to send emails")
+
+        cleaned = normalize_email_list(recipients)
+        if not cleaned:
+                return 0
+
+        display_name = admin_name or "Zealflow Admin"
+        safe_message = (custom_message or "").strip() or "A new form is now available."
+
+        def _build_message(to_email: str) -> MIMEMultipart:
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = f"New form published: {form_title}"
+                msg["From"] = SMTP_FROM
+                msg["To"] = to_email
+
+                text_body = f"""Hi,
+
+{safe_message}
+
+Open the form here:
+{form_url}
+
+— {display_name}
+"""
+
+                html_body = f"""<!DOCTYPE html>
+<html>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                         max-width: 520px; margin: 48px auto; color: #1a1a1a; padding: 0 24px;">
+    <h2 style="font-size: 22px; font-weight: 600; margin-bottom: 8px;">
+        {form_title}
+    </h2>
+    <p style="color: #555; margin-bottom: 28px; font-size: 15px; line-height: 1.6; white-space: pre-wrap;">
+        {safe_message}
+    </p>
+    <a href="{form_url}"
+         style="display: inline-block; background: #4F46E5; color: #ffffff;
+                        text-decoration: none; padding: 12px 28px; border-radius: 8px;
+                        font-size: 15px; font-weight: 500;">
+        Open Form
+    </a>
+    <p style="margin-top: 28px; color: #888; font-size: 13px;">
+        Or paste this link in your browser:<br>
+        <span style="color: #4F46E5;">{form_url}</span>
+    </p>
+    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+    <p style="color: #aaa; font-size: 12px;">
+        Sent by {display_name} via Zealflow.
+    </p>
+</body>
+</html>"""
+
+                msg.attach(MIMEText(text_body, "plain"))
+                msg.attach(MIMEText(html_body, "html"))
+                return msg
+
+        sent_count = 0
+        last_error: Exception | None = None
+
+        for mode in _smtp_modes():
+                try:
+                        with _open_smtp(mode) as server:
+                                for recipient in cleaned:
+                                        try:
+                                                msg = _build_message(recipient)
+                                                server.sendmail(_envelope_from(), [recipient], msg.as_string())
+                                                sent_count += 1
+                                        except Exception as exc:
+                                                last_error = exc
+                        return sent_count
+                except Exception as exc:
+                        last_error = exc
+
+        if sent_count == 0 and last_error:
+                raise RuntimeError(f"SMTP bulk send failed: {last_error}") from last_error
+        return sent_count

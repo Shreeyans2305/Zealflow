@@ -36,13 +36,7 @@ export default function TopBar() {
 
   const handlePreview = () => {
     if (!schema?.id) return;
-
-    const previewUrl = `${window.location.origin}/f/${schema.id}`;
-    const opened = window.open(previewUrl, '_blank', 'noopener,noreferrer');
-
-    if (!opened) {
-      navigate(`/f/${schema.id}`);
-    }
+    navigate(`/f/${schema.id}?from=builder&builderId=${encodeURIComponent(schema.id)}`);
   };
 
   const handlePublish = async () => {

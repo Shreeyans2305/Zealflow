@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { evaluateFieldVisibility, resolveNextPageId } from '../../utils/logicEngine';
 import { fieldRegistry } from '../../registry/fieldRegistry';
 import { api } from '../../utils/apiClient';
@@ -78,6 +79,10 @@ function buildForwardPath(schema, answers, pages, startPageId) {
 
 export default function Stage() {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const fromBuilder = searchParams.get('from') === 'builder';
+  const builderId = searchParams.get('builderId') || id;
 
   const [schema, setSchema] = useState(null);
   const [loadState, setLoadState] = useState('loading'); // 'loading' | 'ready' | 'error'
@@ -331,6 +336,17 @@ export default function Stage() {
       )}
 
       <div className="max-w-[720px] mx-auto px-6 py-[96px]">
+        {fromBuilder && builderId && (
+          <button
+            type="button"
+            onClick={() => navigate(`/builder/${builderId}`)}
+            className="mb-8 btn-secondary inline-flex items-center gap-2 px-4 py-2 text-[13px]"
+          >
+            <ArrowLeft size={14} strokeWidth={1.8} />
+            Back to builder
+          </button>
+        )}
+
         <h1 className="text-5xl display-font text-[var(--color-text-primary)] mb-[64px]">{schema.title}</h1>
 
         {(deadlineAt || timedSession.enabled) && (
